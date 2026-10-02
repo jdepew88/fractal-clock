@@ -1,0 +1,10 @@
+{
+  "name": "fractal-clock",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check public/clock.js && node --check public/glyphs.js && node --check public/time-math.js",
+    "dev": "npx wrangler dev"
+  }
+}

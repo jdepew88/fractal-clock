@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Horologium</title>
+  <meta name="description" content="A fractal time instrument: the current local date and time, computed as geometry.">
+  <meta name="theme-color" content="#0b0a09">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/clock.js"></script>
+</head>
+<body>
+  <main id="instrument">
+    <canvas id="sky" aria-hidden="true"></canvas>
+
+    <div class="wing wing-a">
+      <header class="chrono">
+        <p class="eyebrow" id="zone">Local time</p>
+        <h1 class="time"><time id="time">--:--:--</time><span class="meridiem" id="meridiem"></span></h1>
+        <p class="date" id="date">&nbsp;</p>
+      </header>
+
+      <section class="mark wide" tabindex="0">
+        <h2>Recursion</h2>
+        <p class="value" id="recursion">&nbsp;</p>
+        <p class="note">Every hand ends in a smaller clock, turned to face along that hand. The heaviest branches turn by the hour angle, the mid-tone by the minute, the palest by the second. A pulse leaves the centre each second; its depth is the fraction of the second elapsed.</p>
+      </section>
+
+      <section class="mark" tabindex="0">
+        <h2>Day</h2>
+        <p class="value"><span id="day-pct">0.000</span><small>% elapsed</small></p>
+        <div class="ruler" id="day-ruler"><i class="index"></i></div>
+        <p class="note">Fraction of the local civil day elapsed since midnight. The ruler is divided into 24 hours.</p>
+      </section>
+
+      <section class="mark" tabindex="0">
+        <h2>Year</h2>
+        <p class="value"><span id="year-day">DAY 0 / 365</span></p>
+        <p class="value"><span id="year-pct">0.00000</span><small>% elapsed</small></p>
+        <div class="ruler" id="year-ruler"><i class="index"></i></div>
+        <p class="note">Ordinal day of the year, and the fraction of the year elapsed to this instant. The ruler is divided at the first of each month.</p>
+      </section>
+
+      <section class="mark calendar wide up" tabindex="0">
+        <div class="sigil-now" id="sigil-now"></div>
+        <div>
+          <h2>Calendar</h2>
+          <p class="value" id="cal-month">MONTH</p>
+          <p class="value" id="cal-day">DAY</p>
+          <p class="value" id="cal-quadrant">QUADRANT</p>
+        </div>
+        <p class="note">A symbolic calendar, not a lunar one. Each sigil places a body on a twelve-fold orbit (30° per month), sets a symbolic phase that runs new → full → new over the year, and inscribes a seasonal triangle; equinox and solstice months carry an axis. Quadrants follow the boreal astronomical seasons.</p>
+      </section>
+    </div>
+
+    <div id="dial" role="img" aria-label="Fractal clock">
+      <canvas id="orrery" aria-hidden="true"></canvas>
+    </div>
+
+    <div class="wing wing-b">
+      <section class="mark" tabindex="0">
+        <h2>Angular</h2>
+        <p class="value"><small>SEC</small> <span id="ang-s">0.0°</span></p>
+        <p class="value"><small>MIN</small> <span id="ang-m">0.0°</span></p>
+        <p class="value"><small>HR</small> <span id="ang-h">0.00°</span></p>
+        <p class="note">A full cycle is 360°. Seconds and minutes advance 6° per unit; the hour hand advances 30° per hour, or 0.5° per minute. Measured clockwise from twelve.</p>
+      </section>
+
+      <section class="mark" tabindex="0">
+        <h2>Binary</h2>
+        <div class="binary" id="binary" role="img" aria-label="Binary time"></div>
+        <p class="note">Rows are hour (24-hour), minute and second. Columns weigh 32, 16, 8, 4, 2, 1; a lit mark is a one.</p>
+      </section>
+
+      <section class="mark wide" tabindex="0">
+        <h2>Base 60</h2>
+        <p class="value" id="hora">0;00,00,00</p>
+        <div id="wedges"></div>
+        <p class="value"><small>DIES</small> <span id="dies">0;00,00,00</span></p>
+        <p class="note">Hours; minutes, seconds, thirds — each place is one sixtieth of the last. The wedges write the same hour, minute and second as Babylonian numerals. DIES is the elapsed day as a sexagesimal fraction: its first place turns every 24 minutes.</p>
+      </section>
+
+      <section class="mark" tabindex="0">
+        <h2>Shadow</h2>
+        <p class="value" id="umbra">0.00°</p>
+        <p class="value" id="phase">&nbsp;</p>
+        <p class="note">An abstract sundial. The gnomon's shadow sweeps the outer 24-hour ring once a day, 15° per hour, longest at 06:00 and 18:00 and shortest at noon. It is geometry, not a solar ephemeris.</p>
+      </section>
+
+      <section class="mark up" tabindex="0">
+        <h2>Moon</h2>
+        <p class="value lunar"><span id="moon-disc"></span><span id="moon-age">0.0 d</span></p>
+        <p class="value" id="moon-name">&nbsp;</p>
+        <p class="note">Mean lunar age, counted in synodic months of 29.530589 days from the new moon of 6 January 2000. Accurate to about a day.</p>
+      </section>
+    </div>
+
+    <footer class="strip">
+      <p class="inscription">Horologium <span>·</span> fig. I</p>
+      <div class="sigils" id="sigils"></div>
+      <section class="mark machine up" tabindex="0">
+        <p class="value"><small>UNIX</small> <span id="unix">0</span></p>
+        <p class="value"><small>JD</small> <span id="jd">0</span></p>
+        <p class="note">Unix time counts seconds since 1970-01-01 00:00 UTC. The Julian Date counts days since noon on 1 January 4713 BC.</p>
+      </section>
+    </footer>
+  </main>
+  <noscript><p class="noscript">This instrument needs JavaScript to read the clock.</p></noscript>
+</body>
+</html>

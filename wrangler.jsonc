@@ -1,0 +1,8 @@
+{
+  // Static assets only: there is no Worker script. Everything is computed in the browser.
+  "name": "fractal-clock",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./public"
+  }
+}

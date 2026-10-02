@@ -1,0 +1,8 @@
+# Wrangler local state and cache (cache/cf.json holds your approximate location and ISP)
+.wrangler/
+
+# Local secrets for wrangler dev, if any are ever added
+.dev.vars*
+.env*
+
+node_modules/
