@@ -12,7 +12,8 @@
 </head>
 <body>
   <main id="instrument">
-    <canvas id="sky" aria-hidden="true"></canvas>
+    <canvas id="space" aria-hidden="true"></canvas>
+    <div id="labels" aria-hidden="true"></div>
 
     <div class="wing wing-a">
       <header class="chrono">
@@ -24,7 +25,7 @@
       <section class="mark wide" tabindex="0">
         <h2>Recursion</h2>
         <p class="value" id="recursion">&nbsp;</p>
-        <p class="note">Every hand ends in a smaller clock, turned to face along that hand. The heaviest branches turn by the hour angle, the mid-tone by the minute, the palest by the second. A pulse leaves the centre each second; its depth is the fraction of the second elapsed.</p>
+        <p class="note">Time is applied as three nested rotations: the hour about Z, the minute about Y, the second about X. Every arm is the axle its two children turn about, so each joint is a right angle, and each generation repeats hour, minute, second at a smaller scale. At twelve o'clock every twist is zero and the tree is a perfect lattice: a dense core at midnight, opening until it fills space at noon. Tap a joint to travel to it.</p>
       </section>
 
       <section class="mark" tabindex="0">
@@ -50,12 +51,12 @@
           <p class="value" id="cal-day">DAY</p>
           <p class="value" id="cal-quadrant">QUADRANT</p>
         </div>
-        <p class="note">A symbolic calendar, not a lunar one. Each sigil places a body on a twelve-fold orbit (30° per month), sets a symbolic phase that runs new → full → new over the year, and inscribes a seasonal triangle; equinox and solstice months carry an axis. Quadrants follow the boreal astronomical seasons.</p>
+        <p class="note">A symbolic calendar, not a lunar one. Each sigil places a body on a twelve-fold orbit (30° per month), sets a symbolic phase that runs new → full → new over the year, and inscribes a seasonal triangle; equinox and solstice months carry an axis. Quadrants follow the boreal astronomical seasons. All twelve stand around the year ring: pull back, or choose Year, to find them.</p>
       </section>
     </div>
 
-    <div id="dial" role="img" aria-label="Fractal clock">
-      <canvas id="orrery" aria-hidden="true"></canvas>
+    <div id="dial" role="group" tabindex="0" aria-label="Three-dimensional fractal clock">
+      <p class="unsupported">The spatial instrument needs WebGL 2, which this browser has not provided. The readings around it are still live.</p>
     </div>
 
     <div class="wing wing-b">
@@ -85,26 +86,32 @@
         <h2>Shadow</h2>
         <p class="value" id="umbra">0.00°</p>
         <p class="value" id="phase">&nbsp;</p>
-        <p class="note">An abstract sundial. The gnomon's shadow sweeps the outer 24-hour ring once a day, 15° per hour, longest at 06:00 and 18:00 and shortest at noon. It is geometry, not a solar ephemeris.</p>
+        <p class="note">An abstract sundial. The ☉ rides the outer 24-hour ring once a day, overhead at noon and underfoot at midnight, and the gnomon's line falls opposite it at 15° per hour. It is geometry, not a solar ephemeris.</p>
       </section>
 
       <section class="mark up" tabindex="0">
         <h2>Moon</h2>
         <p class="value lunar"><span id="moon-disc"></span><span id="moon-age">0.0 d</span></p>
         <p class="value" id="moon-name">&nbsp;</p>
-        <p class="note">Mean lunar age, counted in synodic months of 29.530589 days from the new moon of 6 January 2000. Accurate to about a day.</p>
+        <p class="note">Mean lunar age, counted in synodic months of 29.530589 days from the new moon of 6 January 2000. Accurate to about a day. In space the moon stands at that elongation from the year ring's sun; tap it for the same reading.</p>
       </section>
     </div>
 
-    <footer class="strip">
-      <p class="inscription">Horologium <span>·</span> fig. I</p>
-      <div class="sigils" id="sigils"></div>
-      <section class="mark machine up" tabindex="0">
-        <p class="value"><small>UNIX</small> <span id="unix">0</span></p>
-        <p class="value"><small>JD</small> <span id="jd">0</span></p>
-        <p class="note">Unix time counts seconds since 1970-01-01 00:00 UTC. The Julian Date counts days since noon on 1 January 4713 BC.</p>
-      </section>
-    </footer>
+    <p class="inscription">Horologium <span>·</span> fig. II</p>
+    <nav class="modes" aria-label="Viewpoints">
+      <button type="button" data-view="overview" aria-pressed="true"><i>∴</i>Overview</button>
+      <button type="button" data-view="hours" aria-pressed="false"><i>Z</i>Hours</button>
+      <button type="button" data-view="minutes" aria-pressed="false"><i>Y</i>Minutes</button>
+      <button type="button" data-view="seconds" aria-pressed="false"><i>X</i>Seconds</button>
+      <button type="button" data-view="now" aria-pressed="false"><i>◉</i>Now</button>
+      <button type="button" data-view="year" aria-pressed="false"><i>○</i>Year</button>
+      <p class="hint"><span class="fine">drag to orbit · scroll to travel through scale · double-click to return</span><span class="coarse">drag sideways to orbit · pinch to travel through scale</span></p>
+    </nav>
+    <section class="mark machine up" tabindex="0">
+      <p class="value"><small>UNIX</small> <span id="unix">0</span></p>
+      <p class="value"><small>JD</small> <span id="jd">0</span></p>
+      <p class="note">Unix time counts seconds since 1970-01-01 00:00 UTC. The Julian Date counts days since noon on 1 January 4713 BC.</p>
+    </section>
   </main>
   <noscript><p class="noscript">This instrument needs JavaScript to read the clock.</p></noscript>
 </body>

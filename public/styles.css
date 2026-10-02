@@ -47,12 +47,50 @@ body {
   row-gap: 1rem;
 }
 
-#sky {
+/* The scene sits behind everything; space.js sets its height. */
+#space,
+#labels {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
+}
+
+/* The scene is full strength around the dial and recedes behind the readings either side. */
+#space {
   z-index: -1;
+  -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0 / 0.3), #000 27%, #000 73%, rgb(0 0 0 / 0.3));
+  mask-image: linear-gradient(90deg, rgb(0 0 0 / 0.3), #000 27%, #000 73%, rgb(0 0 0 / 0.3));
+}
+
+/* Labels that follow points in the scene: NOW, the moon's reading, the day on the year ring. */
+#labels {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#labels span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 0.58rem;
+  letter-spacing: 0.24em;
+  white-space: nowrap;
+  color: rgb(var(--ink) / 0.9);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  will-change: transform;
+}
+
+#instrument {
+  cursor: grab;
+}
+
+#instrument.is-turning {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .wing {
@@ -73,13 +111,32 @@ body {
   align-self: center;
   width: min(calc(100svh - 10rem), 50vw);
   aspect-ratio: 1;
+  border-radius: 50%;
+  outline: none;
+  /* a vertical swipe still scrolls the page; sideways motion turns the instrument */
+  touch-action: pan-y;
 }
 
-#dial canvas {
+#dial:focus-visible {
+  box-shadow: 0 0 0 1px rgb(var(--accent) / 0.45);
+}
+
+.unsupported {
+  display: none;
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  inset: 35% 15% auto;
+  font-family: var(--serif);
+  font-style: italic;
+  text-align: center;
+  color: rgb(var(--ink) / 0.8);
+}
+
+.no-space .unsupported {
+  display: block;
+}
+
+.no-space .modes {
+  display: none;
 }
 
 /* ── standard time ── */
@@ -212,7 +269,7 @@ body {
   bottom: calc(100% + 0.5rem);
 }
 
-:is(.mark, .sigil):is(:hover, :focus-visible, .is-open) .note {
+.mark:is(:hover, :focus-visible, .is-open) .note {
   opacity: 1;
   visibility: visible;
   transform: none;
@@ -341,7 +398,7 @@ body {
   transition: opacity 0.4s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-:is(.calendar, .sigil):is(:hover, :focus-visible, .is-open) .construct {
+.calendar:is(:hover, :focus-visible, .is-open) .construct {
   opacity: 0.75;
   transform: none;
 }
@@ -368,58 +425,98 @@ body {
   width: 1.05rem;
 }
 
-/* ── perimeter strip: twelve sigils, and machine time ── */
+/* ── perimeter: inscription, viewpoints, machine time ── */
 
-.strip {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: end;
-  gap: 1rem;
+.inscription,
+.modes,
+.machine {
+  grid-row: 2;
+  align-self: end;
 }
 
 .inscription span {
   color: rgb(var(--accent));
 }
 
-.sigils {
-  display: flex;
-  gap: clamp(0.5rem, 1.3vw, 1.3rem);
-}
-
-.sigil {
+/* Viewpoints: instrument labels rather than tabs. The letter is the axis each unit turns about. */
+.modes {
   position: relative;
-  width: 2rem;
-  cursor: help;
-  outline: none;
-  font-size: 0.55rem;
-  letter-spacing: 0.1em;
-  text-align: center;
-  color: rgb(var(--ink) / 0.38);
-  transition: color 0.25s ease, transform 0.25s ease;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem clamp(0.8rem, 1.6vw, 1.7rem);
+  padding-bottom: 1.1rem;
 }
 
-.sigil em {
-  display: block;
-  margin-top: 0.2rem;
-  font-style: normal;
+.modes button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55em;
+  padding: 0.5rem 0 0.2rem;
+  border: 0;
+  border-top: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgb(var(--ink) / 0.5);
+  cursor: pointer;
+  transition: color 0.25s ease, border-color 0.25s ease;
 }
 
-.sigil.is-now {
-  color: rgb(var(--accent));
+.modes button i {
+  font-family: var(--serif);
+  font-size: 1.25em;
+  font-style: italic;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgb(var(--accent) / 0.75);
 }
 
-.sigil:is(:hover, :focus-visible, .is-open) {
+.modes button:hover,
+.modes button:focus-visible {
   color: rgb(var(--ink));
-  transform: translateY(-0.2rem);
+  outline: none;
 }
 
-.sigil .note {
-  top: auto;
-  bottom: calc(100% + 0.5rem);
-  left: 50%;
-  translate: -50% 0;
-  padding: 0.3rem 0.6rem;
+.modes button:focus-visible {
+  border-top-color: rgb(var(--ink) / 0.5);
+}
+
+.modes button[aria-pressed="true"] {
+  color: rgb(var(--ink));
+  border-top-color: rgb(var(--accent));
+}
+
+.hint {
+  position: absolute;
+  inset: auto 0 0;
+  font-family: var(--serif);
+  font-size: 0.74rem;
+  font-style: italic;
+  text-align: center;
+  white-space: nowrap;
+  color: rgb(var(--ink) / 0.45);
+  transition: opacity 1.2s ease;
+}
+
+.has-explored .hint {
+  opacity: 0;
+}
+
+.hint .coarse {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .hint .fine {
+    display: none;
+  }
+
+  .hint .coarse {
+    display: inline;
+  }
 }
 
 .machine {
@@ -457,17 +554,36 @@ body {
   .chrono,
   #dial,
   .wide,
-  .strip {
+  .modes,
+  .inscription,
+  .machine {
     grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  /* the scene ends below the dial; let it fade out rather than stop */
+  #space {
+    -webkit-mask-image: linear-gradient(rgb(0 0 0 / 0.3), #000 11rem, #000 calc(100% - 6rem), transparent);
+    mask-image: linear-gradient(rgb(0 0 0 / 0.3), #000 11rem, #000 calc(100% - 6rem), transparent);
+  }
+
+  #instrument {
+    cursor: auto;
+  }
+
+  #dial {
+    cursor: grab;
   }
 
   .chrono { order: 1; }
   #dial { order: 2; }
-  .calendar { order: 3; }
-  .wing-b .mark { order: 4; }
-  .wing-a .mark:not(.calendar) { order: 5; }
-  .wing-a .mark.wide:not(.calendar) { order: 6; }
-  .strip { order: 7; }
+  .modes { order: 3; }
+  .calendar { order: 4; }
+  .wing-b .mark { order: 5; }
+  .wing-a .mark:not(.calendar) { order: 6; }
+  .wing-a .mark.wide:not(.calendar) { order: 7; }
+  .inscription { order: 8; }
+  .machine { order: 9; }
 
   .time {
     font-size: clamp(3.3rem, 16.5vw, 7rem);
@@ -517,22 +633,11 @@ body {
     display: block;
   }
 
-  .strip {
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: start;
-    gap: 1.4rem;
-    margin-top: 0.5rem;
+  .hint {
+    white-space: normal;
   }
 
-  .sigils {
-    display: grid;
-    grid-template-columns: repeat(6, 2rem);
-    gap: 1rem clamp(0.9rem, 5vw, 2rem);
-  }
-
-  .inscription { order: 2; }
   .machine {
-    order: 3;
     justify-self: start;
     text-align: left;
   }
