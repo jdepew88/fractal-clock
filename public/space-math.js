@@ -2,7 +2,7 @@
 // recursive arms sit, and how the camera looks at them. No DOM or WebGL access,
 // so it runs under node --test. The vertex shader in space.js repeats the tree walk.
 
-import { TAU, clamp, solarAltitude } from './time-math.js';
+import { TAU, clamp, smoothstep, solarAltitude } from './time-math.js';
 
 export const RAD = Math.PI / 180;
 
@@ -62,16 +62,16 @@ const SPACE_FILLING = 2 ** (-1 / 3); // ratio at which a 3D H-tree exactly fills
 
 /**
  * The tree breathes once a day. `expanse` runs 0 at midnight to 1 at noon: the
- * same 12-hour alignment is a dense core at midnight and a space-filling
- * lattice at noon.
+ * same 12-hour alignment is a dense core at midnight and, at noon, a
+ * space-filling lattice whose face is inscribed in the hour ring. `reach` is
+ * the radius of that aligned lattice's corner, the measure of the tree's size
+ * that the default view frames.
  */
 export function treeParams(dayFraction) {
   const expanse = (1 + solarAltitude(dayFraction)) / 2;
-  return {
-    expanse,
-    ratio: 0.64 + (SPACE_FILLING - 0.64) * expanse,
-    l0: 0.19 + 0.11 * expanse,
-  };
+  const ratio = 0.64 + (SPACE_FILLING - 0.64) * expanse;
+  const l0 = 0.3 + 0.08 * expanse;
+  return { expanse, ratio, l0, reach: (l0 / (1 - ratio ** 3)) * Math.hypot(1, ratio, ratio * ratio) };
 }
 
 /**
@@ -126,7 +126,8 @@ export const wakeAlpha = (dt) => 0.85 * Math.exp(-dt / 12) + 0.1 * Math.exp(-dt 
 
 // ── larger scales: day, year, moon ───────────────────────────────────────────
 export const OBLIQUITY = 23.44 * RAD;
-export const RADIUS = { second: 0.9, minute: 0.95, hour: 1, day: 1.22, moon: 1.7, year: 3.4 };
+// Each scale stands well outside the last, so pulling back reveals them in turn.
+export const RADIUS = { second: 0.9, minute: 0.95, hour: 1, day: 1.5, moon: 2.2, year: 4 };
 
 /** The year ring lies in the ecliptic: the hour plane tilted about X by the obliquity. */
 export const ECLIPTIC = turn(2, -OBLIQUITY);
@@ -198,7 +199,7 @@ export function slerp(a, b, t) {
 // zoom means the same thing on every screen. Yaw and pitch are offsets from a
 // base orientation, which each view supplies.
 
-export const LIMITS = { pitch: 1.35, fitMin: 0.03, fitMax: 9 };
+export const LIMITS = { pitch: 1.35, fitMin: 0.03, fitMax: 12 };
 export const FOCAL = 1 / Math.tan(15 * RAD); // 30° vertical field of view
 const DIAL_FILL = 0.47; // fraction of the dial's width that `fit` occupies as a radius
 
@@ -250,6 +251,27 @@ export function project(m, [x, y, z], width, height) {
   };
 }
 
+/** How far the tree's reach sits inside the frame of the default view. */
+const OVERVIEW_FILL = 1.18;
+
+/**
+ * How strongly each larger scale is drawn from a camera of a given `fit`. The
+ * default view holds the tree alone; the day and the moon arrive as the camera
+ * pulls back, the year after them. `rings` is the hour, minute and second
+ * rings, which also recede when they are far outside the frame or when the
+ * camera is deep inside the tree.
+ */
+export function scaleGains(fit) {
+  return {
+    rings: (0.25 + 0.75 * smoothstep(0.12, 0.6, fit)) * (1 - 0.8 * smoothstep(1.15, 1.75, RADIUS.hour / fit)),
+    // the numerals stand outside the hour ring, and leave before the frame's edge can cut them
+    numerals: 1 - smoothstep(0.9, 1.04, RADIUS.hour / fit),
+    day: smoothstep(1.35, 1.95, fit),
+    moon: smoothstep(1.7, 2.7, fit),
+    year: smoothstep(2.6, 4.4, fit),
+  };
+}
+
 /**
  * The named viewpoints. Each gives a target, a base orientation, yaw and pitch
  * offsets, a fit radius, and how strongly to draw each unit's generations.
@@ -260,7 +282,7 @@ export function viewGoal(name, chain, params, branch) {
   const l2 = l1 * params.ratio;
   switch (name) {
     case 'hours':
-      return { target: [0, 0, 0], base: IDENTITY, yaw: 0, pitch: 0, fit: 1.32, emphasis: [1.5, 0.45, 0.3] };
+      return { target: [0, 0, 0], base: IDENTITY, yaw: 0, pitch: 0, fit: 1.22, emphasis: [1.5, 0.45, 0.3] };
     case 'minutes':
       return { target: arms[0].tip, base: dials[1], yaw: 0, pitch: 0, fit: l1 * 2.1, emphasis: [0.5, 1.5, 0.5] };
     case 'seconds':
@@ -268,11 +290,12 @@ export function viewGoal(name, chain, params, branch) {
     case 'now':
       return { target: now, base: IDENTITY, yaw: -0.5, pitch: 0.3, fit: l2 * 1.1, emphasis: [0.7, 0.8, 1.2] };
     case 'year':
-      return { target: [0, 0, 0], base: IDENTITY, yaw: -0.3, pitch: 0.62, fit: 4.5, emphasis: [1, 1, 1] };
+      return { target: [0, 0, 0], base: IDENTITY, yaw: -0.3, pitch: 0.62, fit: 5.3, emphasis: [1, 1, 1] };
     case 'branch':
       return { target: branch.tip, base: IDENTITY, yaw: null, pitch: null, fit: branch.length * 2.4, emphasis: [1, 1, 1] };
     default:
-      return { target: [0, 0, 0], base: IDENTITY, yaw: -0.5, pitch: 0.3, fit: 1.36, emphasis: [1, 1, 1] };
+      // the tree itself fills the frame, whatever size the hour of the day has made it
+      return { target: [0, 0, 0], base: IDENTITY, yaw: -0.5, pitch: 0.3, fit: params.reach * OVERVIEW_FILL, emphasis: [1, 1, 1] };
   }
 }
 

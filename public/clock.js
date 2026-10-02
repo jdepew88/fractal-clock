@@ -1,10 +1,10 @@
 import {
   bits, dayFractionSexagesimal, hourSync, julianDate, monthStarts, moon,
-  palette, parts, phaseName, quadrant, roman, thirds, yearProgress,
+  palette, parts, phaseName, quadrant, roman, thirds, unitTones, yearProgress,
 } from './time-math.js';
 import { cuneiform, monthGlyph, moonGlyph } from './glyphs.js';
-import { createSpace } from './space.js';
-import { RAD } from './space-math.js';
+import { PLANAR, SPATIAL, initialMode, parseCamera, withMode } from './mode.js';
+import { createPlanar } from './planar.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const $ = (id) => document.getElementById(id);
@@ -69,9 +69,24 @@ function buildRuler(id, positions, isMajor) {
   });
 }
 
+function buildSigils() {
+  const strip = $('sigils');
+  MONTHS.forEach((name, i) => {
+    const sigil = document.createElement('span');
+    sigil.className = 'sigil';
+    sigil.tabIndex = 0;
+    sigil.setAttribute('role', 'img');
+    sigil.setAttribute('aria-label', `${name}, month ${roman(i + 1)}`);
+    const numeral = Object.assign(document.createElement('em'), { textContent: roman(i + 1) });
+    const note = Object.assign(document.createElement('span'), { className: 'note', textContent: name });
+    sigil.append(monthGlyph(i + 1), numeral, note);
+    strip.append(sigil);
+  });
+}
+
 // Tap toggles a note open, for screens without hover.
 document.addEventListener('click', (event) => {
-  const target = event.target.closest('.mark');
+  const target = event.target.closest('.mark, .sigil');
   for (const open of document.querySelectorAll('.is-open')) {
     if (open !== target) open.classList.remove('is-open');
   }
@@ -90,6 +105,14 @@ function everySecond(now, p) {
       document.documentElement.style.setProperty(`--${key}`, value);
     }
   }
+  // the tones the spatial tree gives each unit, for the samples beside its viewpoints
+  for (const [key, tone] of Object.entries(unitTones(pal))) {
+    const value = tone.join(' ');
+    if (shown.get(key) !== value) {
+      shown.set(key, value);
+      document.documentElement.style.setProperty(`--${key}`, value);
+    }
+  }
 
   // standard time
   const clockText = `${p.h % 12 || 12}:${pad(p.m)}:${pad(p.s)}`;
@@ -101,7 +124,10 @@ function everySecond(now, p) {
   const offset = -now.getTimezoneOffset();
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Local time';
   put('zone', `${zone.replace(/_/g, ' ')} · UTC${offset < 0 ? '−' : '+'}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`);
-  const label = `Three-dimensional fractal clock showing ${p.h % 12 || 12}:${pad(p.m)} ${meridiem}. Arrow keys orbit, plus and minus zoom, Escape returns to the overview.`;
+  const reading = `${p.h % 12 || 12}:${pad(p.m)} ${meridiem}`;
+  const label = mode === SPATIAL
+    ? `Three-dimensional fractal clock showing ${reading}. Arrow keys orbit, plus and minus zoom, Escape returns to the overview.`
+    : `Fractal clock showing ${reading}`;
   if (shown.get('dial') !== label) {
     shown.set('dial', label);
     dialEl.setAttribute('aria-label', label);
@@ -142,6 +168,7 @@ function everySecond(now, p) {
   if (shown.get('month') !== month) {
     shown.set('month', month);
     $('sigil-now').replaceChildren(monthGlyph(month));
+    [...$('sigils').children].forEach((sigil, i) => sigil.classList.toggle('is-now', i + 1 === month));
   }
   put('cal-month', `MONTH ${roman(month)} · ${MONTHS[month - 1].toUpperCase()}`);
   put('cal-day', `DAY ${year.ordinal}`);
@@ -161,9 +188,12 @@ function everySecond(now, p) {
   put('unix', String(Math.floor(now.getTime() / 1000)));
   put('jd', julianDate(now).toFixed(5));
 
-  if (space) {
-    const { generations, arms, ratio } = space.describe();
+  if (mode === SPATIAL) {
+    const { generations, arms, ratio } = space.describe(p.dayFraction);
     put('recursion', `${generations} GENERATIONS · ${arms.toLocaleString('en-US')} ARMS · RATIO ${ratio.toFixed(3)}`);
+  } else {
+    const { depth, hands, ratio } = planar.describe();
+    put('recursion', `DEPTH ${depth} · ${hands.toLocaleString('en-US')} HANDS · RATIO ${ratio}`);
   }
 }
 
@@ -173,33 +203,75 @@ function everyFrame(p) {
   put('dies', `0;${pad(a)},${pad(b)},${pad(c)}${reducedMotion.matches ? '' : `,${pad(d)}`}`);
 }
 
-// ── the spatial instrument ───────────────────────────────────────────────────
-// ?view=hours|minutes|seconds|now|year opens on that viewpoint, and
-// ?cam=yaw,pitch,fit (degrees, degrees, world radius) pins the camera, so any
-// state of the instrument can be reproduced exactly for testing.
-const modeButtons = [...document.querySelectorAll('.modes button')];
-const pinned = /^(-?[\d.]+),(-?[\d.]+),([\d.]+)$/.exec(query.get('cam') ?? '');
-const space = createSpace({
-  canvas: $('space'),
-  main,
-  dial: dialEl,
-  labels: $('labels'),
-  reducedMotion,
-  initialView: query.get('view') ?? 'overview',
-  initialCamera: pinned && { yaw: pinned[1] * RAD, pitch: pinned[2] * RAD, fit: +pinned[3] },
-  onView: (name) => {
-    for (const button of modeButtons) button.setAttribute('aria-pressed', String(button.dataset.view === name));
-  },
-});
-if (space) {
-  for (const button of modeButtons) button.addEventListener('click', () => space.setView(button.dataset.view));
-} else {
-  main.classList.add('no-space');
+// ── two instruments, one clock ───────────────────────────────────────────────
+// The planar clock is what the page opens on; the spatial instrument is entered
+// from the selector under the dial and loaded only then. Both are drawn from the
+// same `parts(now)`, and only the one showing is drawn at all.
+//   ?mode=2d|3d                          which instrument to open on
+//   ?view=hours|minutes|seconds|now|year a viewpoint of the spatial instrument
+//   ?cam=yaw,pitch,fit                   pins its camera (degrees, degrees, world radius)
+const FADE = 700; // ms; matches the cross-fade in styles.css
+const selectorButtons = [...document.querySelectorAll('.selector button')];
+const viewButtons = [...document.querySelectorAll('.modes button')];
+const planar = createPlanar({ sky: $('sky'), canvas: $('orrery'), main, dial: dialEl, reducedMotion });
+let mode = PLANAR;
+let space = null;
+let spaceRequest = null;
+let fadeUntil = 0; // until then the instrument being left is still drawn, so it can fade
+let dirty = true;
+
+function loadSpace() {
+  spaceRequest ??= import('./space.js').then(({ createSpace }) => {
+    const created = createSpace({
+      canvas: $('space'),
+      main,
+      dial: dialEl,
+      labels: $('labels'),
+      reducedMotion,
+      initialView: query.get('view') ?? 'overview',
+      initialCamera: parseCamera(query),
+      onView: (name) => {
+        for (const button of viewButtons) button.setAttribute('aria-pressed', String(button.dataset.view === name));
+      },
+    });
+    if (created) {
+      for (const button of viewButtons) button.addEventListener('click', () => created.setView(button.dataset.view));
+    }
+    return created;
+  }).catch(() => null);
+  return spaceRequest;
 }
+
+async function setMode(next, { initial = false } = {}) {
+  if (next === SPATIAL && !space) {
+    space = await loadSpace();
+    if (!space) {
+      // no WebGL 2: the planar clock stays, and the selector says why
+      main.classList.add('no-space');
+      selectorButtons.find((button) => button.dataset.mode === SPATIAL).disabled = true;
+      next = PLANAR;
+    }
+  }
+  if (next === mode && !initial) return;
+  mode = next;
+  main.dataset.mode = mode;
+  for (const button of selectorButtons) button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+  planar.setActive(true); // through the fade; frame() rests it afterwards if it is not the one showing
+  space?.setActive(mode === SPATIAL, { fromPlanar: !initial });
+  fadeUntil = initial || reducedMotion.matches ? 0 : performance.now() + FADE;
+  // the spatial instrument takes the keyboard; the planar one is a picture
+  dialEl.setAttribute('role', mode === SPATIAL ? 'group' : 'img');
+  if (mode === SPATIAL) dialEl.tabIndex = 0;
+  else dialEl.removeAttribute('tabindex');
+  dirty = true;
+  if (!initial) history.replaceState(null, '', location.pathname + withMode(location.search, mode));
+}
+
+for (const button of selectorButtons) button.addEventListener('click', () => setMode(button.dataset.mode));
+document.querySelector('.throw').addEventListener('click', () => setMode(mode === SPATIAL ? PLANAR : SPATIAL));
 
 // ── run ──────────────────────────────────────────────────────────────────────
 let lastSecond = null;
-let dirty = true;
 
 function frame() {
   let now = clock();
@@ -214,15 +286,25 @@ function frame() {
     everySecond(now, p);
   }
   if (ticked || !reducedMotion.matches) everyFrame(p);
-  space?.frame(now, p, pal, hourSync(p));
+  const fading = performance.now() < fadeUntil;
+  if (!fading && mode === SPATIAL) planar.setActive(false);
+  const sync = hourSync(p);
+  if (mode === PLANAR || fading) planar.frame(now, p, pal, sync);
+  if (space && (mode === SPATIAL || fading)) space.frame(now, p, pal, sync);
   requestAnimationFrame(frame);
 }
 
 buildBinary();
 buildRuler('day-ruler', Array.from({ length: 25 }, (_, i) => i / 24), (i) => i % 6 === 0);
+buildSigils();
 new ResizeObserver(() => {
+  planar.resize();
   space?.resize();
   dirty = true;
 }).observe(main);
-space?.resize();
-requestAnimationFrame(frame);
+// Open directly on the instrument asked for; the cross-fade is for changes made afterwards.
+main.dataset.mode = initialMode(query);
+setMode(main.dataset.mode, { initial: true }).then(() => {
+  requestAnimationFrame(frame);
+  requestAnimationFrame(() => requestAnimationFrame(() => main.classList.add('is-live')));
+});

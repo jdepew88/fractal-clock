@@ -4,6 +4,10 @@
   --ink: 236 227 208;
   --accent: 217 177 102;
   --deep: 184 118 58;
+  /* the tones the spatial tree gives each unit of time, also rewritten by clock.js */
+  --hour: 174 100 45;
+  --minute: 217 177 102;
+  --second: 242 243 245;
   --sans: "Segoe UI Variable Display", "Segoe UI", "Helvetica Neue", "SF Pro Display", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, "DejaVu Sans Mono", monospace;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -47,7 +51,10 @@ body {
   row-gap: 1rem;
 }
 
-/* The scene sits behind everything; space.js sets its height. */
+/* Two instruments share the page: the planar clock (#sky behind, #orrery on the
+   dial) and the spatial one (#space, whose height space.js sets, and #labels).
+   data-mode on #instrument says which is showing; the other fades out and rests. */
+#sky,
 #space,
 #labels {
   position: absolute;
@@ -55,6 +62,27 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
+}
+
+/* .is-live arrives once the page has drawn, so it opens on its instrument without a fade */
+.is-live :is(#sky, #orrery, #space, #labels) {
+  transition: opacity 0.7s ease, visibility 0.7s;
+}
+
+#sky {
+  z-index: -2;
+}
+
+[data-mode="3d"] :is(#sky, #orrery),
+[data-mode="2d"] :is(#space, #labels) {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* a line of a note that belongs to one instrument only */
+[data-mode="2d"] .in-3d,
+[data-mode="3d"] .in-2d {
+  display: none;
 }
 
 /* The scene is full strength around the dial and recedes behind the readings either side. */
@@ -83,7 +111,7 @@ body {
   will-change: transform;
 }
 
-#instrument {
+#instrument[data-mode="3d"] {
   cursor: grab;
 }
 
@@ -109,12 +137,22 @@ body {
 #dial {
   position: relative;
   align-self: center;
-  width: min(calc(100svh - 10rem), 50vw);
+  width: min(calc(100svh - 12.5rem), 50vw);
   aspect-ratio: 1;
   border-radius: 50%;
   outline: none;
-  /* a vertical swipe still scrolls the page; sideways motion turns the instrument */
+}
+
+/* a vertical swipe still scrolls the page; sideways motion turns the spatial instrument */
+[data-mode="3d"] #dial {
   touch-action: pan-y;
+}
+
+#orrery {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 #dial:focus-visible {
@@ -123,9 +161,8 @@ body {
 
 .unsupported {
   display: none;
-  position: absolute;
-  inset: 35% 15% auto;
   font-family: var(--serif);
+  font-size: 0.78rem;
   font-style: italic;
   text-align: center;
   color: rgb(var(--ink) / 0.8);
@@ -133,10 +170,6 @@ body {
 
 .no-space .unsupported {
   display: block;
-}
-
-.no-space .modes {
-  display: none;
 }
 
 /* ── standard time ── */
@@ -269,7 +302,7 @@ body {
   bottom: calc(100% + 0.5rem);
 }
 
-.mark:is(:hover, :focus-visible, .is-open) .note {
+:is(.mark, .sigil):is(:hover, :focus-visible, .is-open) .note {
   opacity: 1;
   visibility: visible;
   transform: none;
@@ -398,7 +431,7 @@ body {
   transition: opacity 0.4s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-.calendar:is(:hover, :focus-visible, .is-open) .construct {
+:is(.calendar, .sigil):is(:hover, :focus-visible, .is-open) .construct {
   opacity: 0.75;
   transform: none;
 }
@@ -425,10 +458,10 @@ body {
   width: 1.05rem;
 }
 
-/* ── perimeter: inscription, viewpoints, machine time ── */
+/* ── perimeter: inscription, the console under the dial, machine time ── */
 
 .inscription,
-.modes,
+.console,
 .machine {
   grid-row: 2;
   align-self: end;
@@ -438,7 +471,167 @@ body {
   color: rgb(var(--accent));
 }
 
-/* Viewpoints: instrument labels rather than tabs. The letter is the axis each unit turns about. */
+.console {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: auto;
+}
+
+/* The selector: a two-position switch between the planar clock and the spatial one. */
+.selector {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.selector button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgb(var(--ink) / 0.62);
+  cursor: pointer;
+  transition: color 0.25s ease;
+}
+
+.selector button:first-child {
+  flex-direction: row-reverse;
+}
+
+.selector small {
+  font-family: var(--serif);
+  font-size: 1.15em;
+  font-style: italic;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: rgb(var(--accent));
+}
+
+.selector button:is(:hover, :focus-visible),
+.selector button[aria-pressed="true"] {
+  color: rgb(var(--ink));
+  outline: none;
+}
+
+.selector button:focus-visible {
+  box-shadow: 0 1px 0 rgb(var(--ink) / 0.5);
+}
+
+.selector button:disabled {
+  color: rgb(var(--ink) / 0.3);
+  cursor: default;
+}
+
+/* the throw of the switch: a slot, and a lozenge resting at the side in use */
+.throw {
+  position: relative;
+  width: 3.2rem;
+  height: 1.2rem;
+  cursor: pointer;
+}
+
+.throw::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  border-top: 1px solid rgb(var(--ink) / 0.45);
+}
+
+.throw::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 0.25rem);
+  left: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1px solid rgb(var(--accent));
+  background: rgb(var(--accent));
+  box-shadow: 0 0 0.6rem rgb(var(--accent) / 0.6);
+  transform: rotate(45deg);
+  transition: left 0.45s cubic-bezier(0.3, 0.7, 0.2, 1);
+}
+
+[data-mode="3d"] .throw::after {
+  left: calc(100% - 0.5rem);
+}
+
+.selector:hover .throw::before {
+  border-top-color: rgb(var(--ink) / 0.8);
+}
+
+/* Under the selector, whichever belongs to the instrument showing: the twelve
+   sigils of the planar clock, or the viewpoints of the spatial one. They share
+   one cell so the page does not move when the instrument changes. */
+.deck {
+  display: grid;
+  align-items: end;
+  justify-items: center;
+}
+
+.deck > * {
+  grid-area: 1 / 1;
+}
+
+.is-live .deck > * {
+  transition: opacity 0.5s ease, visibility 0.5s;
+}
+
+[data-mode="3d"] .sigils,
+[data-mode="2d"] .modes {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.sigils {
+  display: flex;
+  gap: clamp(0.5rem, 1.3vw, 1.3rem);
+}
+
+.sigil {
+  position: relative;
+  width: 2rem;
+  cursor: help;
+  outline: none;
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-align: center;
+  color: rgb(var(--ink) / 0.38);
+  transition: color 0.25s ease, transform 0.25s ease;
+}
+
+.sigil em {
+  display: block;
+  margin-top: 0.2rem;
+  font-style: normal;
+}
+
+.sigil.is-now {
+  color: rgb(var(--accent));
+}
+
+.sigil:is(:hover, :focus-visible, .is-open) {
+  color: rgb(var(--ink));
+  transform: translateY(-0.2rem);
+}
+
+.sigil .note {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+  left: 50%;
+  translate: -50% 0;
+  padding: 0.3rem 0.6rem;
+}
+
+/* Viewpoints: instrument labels rather than tabs. The letter is the axis each
+   unit turns about, and the stroke beside it is how that unit's arms are drawn. */
 .modes {
   position: relative;
   display: flex;
@@ -463,6 +656,28 @@ body {
   color: rgb(var(--ink) / 0.5);
   cursor: pointer;
   transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.modes button b {
+  align-self: center;
+  width: 1.15rem;
+  border-radius: 2px;
+}
+
+.modes b.hour {
+  height: 4px;
+  background: rgb(var(--hour));
+  box-shadow: 0 0 5px rgb(var(--hour) / 0.9);
+}
+
+.modes b.minute {
+  height: 2px;
+  background: rgb(var(--minute));
+}
+
+.modes b.second {
+  height: 1px;
+  background: rgb(var(--second));
 }
 
 .modes button i {
@@ -554,7 +769,7 @@ body {
   .chrono,
   #dial,
   .wide,
-  .modes,
+  .console,
   .inscription,
   .machine {
     grid-column: 1 / -1;
@@ -567,17 +782,23 @@ body {
     mask-image: linear-gradient(rgb(0 0 0 / 0.3), #000 11rem, #000 calc(100% - 6rem), transparent);
   }
 
-  #instrument {
+  #instrument[data-mode="3d"] {
     cursor: auto;
   }
 
-  #dial {
+  [data-mode="3d"] #dial {
     cursor: grab;
+  }
+
+  .sigils {
+    display: grid;
+    grid-template-columns: repeat(6, 2rem);
+    gap: 0.9rem clamp(0.9rem, 5vw, 2rem);
   }
 
   .chrono { order: 1; }
   #dial { order: 2; }
-  .modes { order: 3; }
+  .console { order: 3; }
   .calendar { order: 4; }
   .wing-b .mark { order: 5; }
   .wing-a .mark:not(.calendar) { order: 6; }
@@ -633,7 +854,14 @@ body {
     display: block;
   }
 
+  /* the hint may wrap here, so it takes its own line under the viewpoints */
+  .modes {
+    padding-bottom: 0;
+  }
+
   .hint {
+    position: static;
+    flex-basis: 100%;
     white-space: normal;
   }
 

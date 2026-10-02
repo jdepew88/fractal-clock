@@ -157,6 +157,17 @@ export function palette(hour) {
 }
 
 /**
+ * One tone for each unit of time, drawn from the palette of the hour so the
+ * three stay one family: the hour deeper than `deep`, the minute the accent
+ * itself, the second paler than `ink`. Each end is pushed a little further
+ * from the accent than the palette already places it.
+ */
+export function unitTones({ ink, accent, deep }) {
+  const away = (from, k) => from.map((v, i) => Math.round(clamp(v + (v - accent[i]) * k, 0, 255)));
+  return { hour: away(deep, 0.3), minute: accent, second: away(ink, 0.35) };
+}
+
+/**
  * Synchronisation around the top of each hour, where every relative hand angle
  * is zero and the fractal collapses onto a single ray. `e` (0..1) is the
  * strength of the radial-symmetry state; noon and midnight get 60 folds and

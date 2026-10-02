@@ -11,7 +11,8 @@
   <script type="module" src="/clock.js"></script>
 </head>
 <body>
-  <main id="instrument">
+  <main id="instrument" data-mode="2d">
+    <canvas id="sky" aria-hidden="true"></canvas>
     <canvas id="space" aria-hidden="true"></canvas>
     <div id="labels" aria-hidden="true"></div>
 
@@ -25,7 +26,7 @@
       <section class="mark wide" tabindex="0">
         <h2>Recursion</h2>
         <p class="value" id="recursion">&nbsp;</p>
-        <p class="note">Time is applied as three nested rotations: the hour about Z, the minute about Y, the second about X. Every arm is the axle its two children turn about, so each joint is a right angle, and each generation repeats hour, minute, second at a smaller scale. At twelve o'clock every twist is zero and the tree is a perfect lattice: a dense core at midnight, opening until it fills space at noon. Tap a joint to travel to it.</p>
+        <p class="note"><span class="in-2d">Every hand ends in a smaller clock, turned to face along that hand. The heaviest branches turn by the hour angle, the mid-tone by the minute, the palest by the second. A pulse leaves the centre each second; its depth is the fraction of the second elapsed. Spatial, below the dial, opens the same clock in three dimensions.</span><span class="in-3d">Time is applied as three nested rotations: the hour about Z, the minute about Y, the second about X. Every arm is the axle its two children turn about, so each joint is a right angle, and the generations repeat hour, minute, second at a smaller scale: hours heavy and deep, minutes plain, seconds fine and bright. At twelve o'clock every twist is zero and the tree is a perfect lattice: a dense core at midnight, opening until it fills the hour ring at noon. Tap a joint to travel to it.</span></p>
       </section>
 
       <section class="mark" tabindex="0">
@@ -51,12 +52,12 @@
           <p class="value" id="cal-day">DAY</p>
           <p class="value" id="cal-quadrant">QUADRANT</p>
         </div>
-        <p class="note">A symbolic calendar, not a lunar one. Each sigil places a body on a twelve-fold orbit (30° per month), sets a symbolic phase that runs new → full → new over the year, and inscribes a seasonal triangle; equinox and solstice months carry an axis. Quadrants follow the boreal astronomical seasons. All twelve stand around the year ring: pull back, or choose Year, to find them.</p>
+        <p class="note">A symbolic calendar, not a lunar one. Each sigil places a body on a twelve-fold orbit (30° per month), sets a symbolic phase that runs new → full → new over the year, and inscribes a seasonal triangle; equinox and solstice months carry an axis. Quadrants follow the boreal astronomical seasons.<span class="in-3d"> All twelve stand around the year ring: pull back, or choose Year, to find them.</span></p>
       </section>
     </div>
 
-    <div id="dial" role="group" tabindex="0" aria-label="Three-dimensional fractal clock">
-      <p class="unsupported">The spatial instrument needs WebGL 2, which this browser has not provided. The readings around it are still live.</p>
+    <div id="dial" role="img" aria-label="Fractal clock">
+      <canvas id="orrery" aria-hidden="true"></canvas>
     </div>
 
     <div class="wing wing-b">
@@ -86,27 +87,38 @@
         <h2>Shadow</h2>
         <p class="value" id="umbra">0.00°</p>
         <p class="value" id="phase">&nbsp;</p>
-        <p class="note">An abstract sundial. The ☉ rides the outer 24-hour ring once a day, overhead at noon and underfoot at midnight, and the gnomon's line falls opposite it at 15° per hour. It is geometry, not a solar ephemeris.</p>
+        <p class="note"><span class="in-2d">An abstract sundial. The gnomon's shadow sweeps the outer 24-hour ring once a day, 15° per hour, longest at 06:00 and 18:00 and shortest at noon. It is geometry, not a solar ephemeris.</span><span class="in-3d">An abstract sundial. The ☉ rides a 24-hour ring outside the hour ring once a day, overhead at noon and underfoot at midnight, and the gnomon's line falls opposite it at 15° per hour. Pull back a little to find it. It is geometry, not a solar ephemeris.</span></p>
       </section>
 
       <section class="mark up" tabindex="0">
         <h2>Moon</h2>
         <p class="value lunar"><span id="moon-disc"></span><span id="moon-age">0.0 d</span></p>
         <p class="value" id="moon-name">&nbsp;</p>
-        <p class="note">Mean lunar age, counted in synodic months of 29.530589 days from the new moon of 6 January 2000. Accurate to about a day. In space the moon stands at that elongation from the year ring's sun; tap it for the same reading.</p>
+        <p class="note">Mean lunar age, counted in synodic months of 29.530589 days from the new moon of 6 January 2000. Accurate to about a day.<span class="in-3d"> In space the moon stands at that elongation from the year ring's sun, on its own ring beyond the day; pull back to find it, and tap it for the same reading.</span></p>
       </section>
     </div>
 
-    <p class="inscription">Horologium <span>·</span> fig. II</p>
-    <nav class="modes" aria-label="Viewpoints">
-      <button type="button" data-view="overview" aria-pressed="true"><i>∴</i>Overview</button>
-      <button type="button" data-view="hours" aria-pressed="false"><i>Z</i>Hours</button>
-      <button type="button" data-view="minutes" aria-pressed="false"><i>Y</i>Minutes</button>
-      <button type="button" data-view="seconds" aria-pressed="false"><i>X</i>Seconds</button>
-      <button type="button" data-view="now" aria-pressed="false"><i>◉</i>Now</button>
-      <button type="button" data-view="year" aria-pressed="false"><i>○</i>Year</button>
-      <p class="hint"><span class="fine">drag to orbit · scroll to travel through scale · double-click to return</span><span class="coarse">drag sideways to orbit · pinch to travel through scale</span></p>
-    </nav>
+    <p class="inscription">Horologium <span>·</span> fig. <span class="in-2d">I</span><span class="in-3d">II</span></p>
+    <div class="console">
+      <div class="selector" role="group" aria-label="Projection">
+        <button type="button" data-mode="2d" aria-pressed="true">Planar<small>2D</small></button>
+        <i class="throw" aria-hidden="true"></i>
+        <button type="button" data-mode="3d" aria-pressed="false">Spatial<small>3D</small></button>
+      </div>
+      <p class="unsupported" role="status">The spatial instrument needs WebGL 2, which this browser has not provided.</p>
+      <div class="deck">
+        <div class="sigils" id="sigils"></div>
+        <nav class="modes" aria-label="Viewpoints">
+          <button type="button" data-view="overview" aria-pressed="true"><i>∴</i>Overview</button>
+          <button type="button" data-view="hours" aria-pressed="false"><b class="hour"></b><i>Z</i>Hours</button>
+          <button type="button" data-view="minutes" aria-pressed="false"><b class="minute"></b><i>Y</i>Minutes</button>
+          <button type="button" data-view="seconds" aria-pressed="false"><b class="second"></b><i>X</i>Seconds</button>
+          <button type="button" data-view="now" aria-pressed="false"><i>◉</i>Now</button>
+          <button type="button" data-view="year" aria-pressed="false"><i>○</i>Year</button>
+          <p class="hint"><span class="fine">drag to orbit · scroll out for the day, the moon, the year · double-click to return</span><span class="coarse">drag sideways to orbit · pinch out for the day, the moon, the year</span></p>
+        </nav>
+      </div>
+    </div>
     <section class="mark machine up" tabindex="0">
       <p class="value"><small>UNIX</small> <span id="unix">0</span></p>
       <p class="value"><small>JD</small> <span id="jd">0</span></p>

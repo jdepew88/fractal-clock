@@ -3,11 +3,11 @@
 // tree, its dials, the day ring, the moon and the year ring are all placed by it.
 // Geometry is static; time enters as a handful of uniforms and matrices.
 
-import { TAU, clamp, moon as lunar, smoothstep, solarAltitude, yearProgress, roman } from './time-math.js';
+import { TAU, clamp, moon as lunar, smoothstep, solarAltitude, unitTones, yearProgress, roman } from './time-math.js';
 import {
   ECLIPTIC, FOCAL, IDENTITY, LUNAR, RADIUS, VIEWS, WAKE_OFFSETS, arm, cameraBasis, clampFit, clampPitch,
   clockAngles, dailySun, distanceFor, matFromQuat, onRing, principal, project, quatFromMat, slerp,
-  solarLongitude, treeParams, viewGoal, viewProjection, wakeAlpha,
+  scaleGains, solarLongitude, treeParams, viewGoal, viewProjection, wakeAlpha,
 } from './space-math.js';
 import { romanStrokes, sigilStrokes } from './engraving.js';
 
@@ -31,7 +31,11 @@ uniform vec2 uFog;
 in vec2 aCorner;
 out float vAcross;
 out float vHalf;
+out vec2 vHalo;
 out vec4 vColor;
+
+// Set before calling segment(): a soft glow reaching gHalo.y px beyond the line, of strength gHalo.x.
+vec2 gHalo = vec2(0.0);
 
 // Expands a world-space segment into a screen-space quad of a given pixel width,
 // clipping it against the near plane so the camera can travel inside the tree.
@@ -41,6 +45,7 @@ vec4 segment(vec3 a, vec3 b, float widthPx, out float shade) {
   shade = 0.0;
   vAcross = 0.0;
   vHalf = 0.0;
+  vHalo = gHalo;
   if (ca.w < uNear && cb.w < uNear) return vec4(2.0, 2.0, 2.0, 1.0);
   if (ca.w < uNear) ca = mix(ca, cb, (uNear - ca.w) / (cb.w - ca.w));
   else if (cb.w < uNear) cb = mix(cb, ca, (uNear - cb.w) / (ca.w - cb.w));
@@ -49,7 +54,7 @@ vec4 segment(vec3 a, vec3 b, float widthPx, out float shade) {
   vec2 dir = len > 1e-5 ? d / len : vec2(1.0, 0.0);
   vec4 c = aCorner.x < 0.5 ? ca : cb;
   float w = max(widthPx, 1.0);
-  float reach = w * 0.5 + 1.0;
+  float reach = w * 0.5 + 1.0 + gHalo.y;
   vAcross = aCorner.y * reach;
   vHalf = w * 0.5;
   shade = min(widthPx, 1.0) * (1.0 - 0.6 * smoothstep(uFog.x, uFog.y, c.w));
@@ -80,13 +85,22 @@ uniform vec3 uCos;
 uniform vec3 uSin;
 uniform float uRatio;
 uniform float uL0;
-uniform vec3 uTones[3];
+uniform vec3 uUnitTones[3]; // hour, minute, second
 uniform vec3 uEmphasis;
+uniform vec3 uPulse; // how strongly each unit answers the wavefront of the second
+uniform vec3 uSwell; // slower light: the minute as it turns over, the hour as it strikes
 uniform float uFront;
 uniform float uFocal;
 uniform float uDpr;
 uniform float uGain;
 uniform float uDust; // extra light on the finest generations, strongest at midnight
+
+// Hours are drawn heavy and steady, minutes plain, seconds fine and bright:
+// width as a fraction of length, its limits in px, and brightness.
+const vec3 SLENDER = vec3(0.05, 0.028, 0.015);
+const vec3 FINEST = vec3(1.3, 0.85, 0.45);
+const vec3 BROADEST = vec3(5.0, 2.8, 1.5);
+const vec3 LIGHT = vec3(0.95, 0.78, 1.0);
 
 void main() {
   mat3 frame = mat3(1.0);
@@ -110,19 +124,20 @@ void main() {
 
   float depth = max((uViewProj * vec4((base + tip) * 0.5, 1.0)).w, uNear);
   float lengthPx = len * uFocal / depth;
-  float width = clamp(lengthPx * 0.03, 0.8 * uDpr, 3.2 * uDpr) * (hand ? 1.8 : 1.0);
+  float width = clamp(lengthPx * SLENDER[unit], FINEST[unit] * uDpr, BROADEST[unit] * uDpr) * (hand ? 1.5 : 1.0);
+  // the hour arms carry a soft glow, on those large enough to hold one
+  if (unit == 0 && lengthPx > 14.0 * uDpr) gHalo = vec2(0.26, width * 1.5);
   float shade;
   gl_Position = segment(base, tip, width, shade);
 
-  float pulse = 1.0 + 1.4 * exp(-pow(uFront - aGeneration, 2.0) / 0.7);
-  float alpha = (0.92 * pow(0.8, aGeneration) + 0.07 + uDust) * pulse * uEmphasis[unit] * uGain;
+  // Brightness falls by the octave rather than the generation, so each hour, minute,
+  // second triple reads as one clock and the next triple as the same clock, smaller.
+  float octave = floor(aGeneration / 3.0);
+  float pulse = 1.0 + uPulse[unit] * exp(-pow(uFront - aGeneration, 2.0) / 0.7) + uSwell[unit];
+  float alpha = (LIGHT[unit] * pow(0.6, octave) + 0.05 + uDust) * pulse * uEmphasis[unit] * uGain;
   alpha *= smoothstep(0.25, 1.6, lengthPx);
-  vec3 tone = uTones[unit == 0 ? 2 : unit == 1 ? 1 : 0];
-  if (hand) {
-    tone = mix(tone, uTones[0], 0.5);
-    alpha = max(alpha, 0.9);
-  }
-  vColor = vec4(tone, min(alpha, 1.0) * shade);
+  if (hand) alpha = max(alpha, 0.9);
+  vColor = vec4(uUnitTones[unit], min(alpha, 1.0) * shade);
 }
 `;
 
@@ -169,12 +184,13 @@ uniform float uLit;
 uniform float uDim;
 uniform float uGain;
 uniform float uDpr;
+uniform vec4 uTint; // a tone, and how far to move toward it
 
 void main() {
   float shade;
   gl_Position = segment((uModel * vec4(aA, 1.0)).xyz, (uModel * vec4(aB, 1.0)).xyz, aStyle.z * uDpr, shade);
   float lit = mix(uDim, 1.0, step(aStyle.w, uLit));
-  vColor = vec4(uTones[int(aStyle.x + 0.5)], min(1.0, aStyle.y * lit * uGain) * shade);
+  vColor = vec4(mix(uTones[int(aStyle.x + 0.5)], uTint.rgb, uTint.a), min(1.0, aStyle.y * lit * uGain) * shade);
 }
 `;
 
@@ -182,10 +198,17 @@ const LINE_FS = `#version 300 es
 precision mediump float;
 in float vAcross;
 in float vHalf;
+in vec2 vHalo;
 in vec4 vColor;
 out vec4 color;
 void main() {
-  float a = vColor.a * clamp(vHalf + 0.5 - abs(vAcross), 0.0, 1.0);
+  float d = abs(vAcross);
+  float a = clamp(vHalf + 0.5 - d, 0.0, 1.0);
+  if (vHalo.y > 0.0) {
+    float fall = max(0.0, 1.0 - max(d - vHalf, 0.0) / vHalo.y);
+    a += vHalo.x * fall * fall;
+  }
+  a *= vColor.a;
   color = vec4(vColor.rgb * a, a);
 }
 `;
@@ -494,15 +517,19 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     goalYaw: 0,
     goalPitch: 0,
     goalFit: 1,
+    follow: true, // the fit tracks the view's own, until the user travels through scale
     snap: true,
     forced: null, // a fixed yaw, pitch and fit from ?cam=, until the user moves
   };
   let started = false;
+  let entrance = false; // the next frame begins a turn in from the planar face
 
-  const state = { viewProj: null, chain: null, params: null, angles: null, moonAt: null, width: 1, height: 1 };
+  const state = { viewProj: null, chain: null, params: null, angles: null, moonAt: null, gains: scaleGains(1), width: 1, height: 1 };
   let geometry = { width: 1, height: 1, dpr: 1, size: 1, cx: 0, cy: 0 };
   let lastDrawn = '';
   let dirty = true; // the canvas was cleared or something outside time changed: draw at the next frame regardless
+  let active = false; // while the planar instrument is showing, this one neither draws nor takes input
+  let unsized = true;
   let lastReal = performance.now();
   let lastDraw = 0;
   let held = 0;
@@ -513,6 +540,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     camera.branch = branch;
     camera.snap = snap || reducedMotion.matches;
     camera.forced = null;
+    camera.follow = true;
     if (state.chain) {
       const goal = viewGoal(name, state.chain, state.params, branch && arm(branch.path, branch.generation, state.angles, state.params));
       if (goal.yaw !== null) {
@@ -528,6 +556,8 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   }
 
   function resize() {
+    unsized = !active;
+    if (unsized) return;
     const mainBox = main.getBoundingClientRect();
     const dialBox = dial.getBoundingClientRect();
     const size = dialBox.width;
@@ -563,17 +593,18 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   function zoomBy(factor) {
     camera.goalFit = clampFit(camera.goalFit * factor);
     camera.forced = null;
+    camera.follow = false;
     held = 20;
   }
 
   main.addEventListener('pointerdown', (event) => {
-    if (event.target.closest('.mark, .modes, button, a')) return;
+    if (!active || event.target.closest('.mark, .console, button, a')) return;
     // Touch only takes hold on the instrument itself, so the rest of the page scrolls normally.
     if (event.pointerType !== 'mouse' && !dial.contains(event.target)) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     if (event.pointerType === 'mouse') event.preventDefault(); // no text selection while turning
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointers.size === 1) gesture = { x: event.clientX, y: event.clientY, travelled: 0, at: performance.now() };
+    if (pointers.size === 1) gesture = { x: event.clientX, y: event.clientY, travelled: 0, at: performance.now(), touch: event.pointerType !== 'mouse', yielded: false };
     try {
       main.setPointerCapture(event.pointerId);
     } catch {
@@ -589,8 +620,11 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     if (pointers.size === 1) {
       const dx = next.x - previous.x;
       const dy = next.y - previous.y;
+      const settled = gesture.travelled > 4;
       gesture.travelled += Math.abs(dx) + Math.abs(dy);
-      if (gesture.travelled > 4) {
+      // A finger that sets off mostly up or down is scrolling the page, not turning the instrument.
+      if (!settled && gesture.travelled > 4 && gesture.touch) gesture.yielded = Math.abs(next.y - gesture.y) > Math.abs(next.x - gesture.x);
+      if (gesture.travelled > 4 && !gesture.yielded) {
         orbitBy(dx, dy);
         explored();
       }
@@ -617,7 +651,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   main.addEventListener('pointercancel', release);
 
   main.addEventListener('wheel', (event) => {
-    if (event.target.closest('.note')) return;
+    if (!active || event.target.closest('.note')) return;
     // Where the page itself scrolls, the wheel belongs to the page unless Ctrl is held.
     const pageScrolls = document.documentElement.scrollHeight > window.innerHeight + 2;
     if (pageScrolls && !event.ctrlKey) return;
@@ -627,10 +661,11 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   }, { passive: false });
 
   main.addEventListener('dblclick', (event) => {
-    if (!event.target.closest('.mark, .modes, button, a')) setView('overview');
+    if (active && !event.target.closest('.mark, .console, button, a')) setView('overview');
   });
 
   dial.addEventListener('keydown', (event) => {
+    if (!active) return;
     const step = 0.12 / 0.0055;
     const keys = {
       ArrowLeft: () => orbitBy(-step, 0),
@@ -660,7 +695,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
       const s = project(state.viewProj, point, geometry.width, geometry.height);
       return s.w > 0 ? Math.hypot(s.x - x, s.y - y) : Infinity;
     };
-    if (near(state.moonAt) < 22) {
+    if (state.gains.moon > 0.4 && near(state.moonAt) < 22) {
       moonOpen = !moonOpen;
       dirty = true;
       return;
@@ -687,10 +722,13 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     gl.useProgram(lineProgram.program);
     common(lineProgram, tones);
     gl.uniform1f(lineProgram.at('uDim'), 0.32);
-    return (batch, matrix, lit = 1, gain = 1) => {
+    return (batch, matrix, lit = 1, gain = 1, tint = null) => {
+      if (gain < 0.004) return; // a scale the camera has not reached yet
       gl.uniformMatrix4fv(lineProgram.at('uModel'), false, matrix);
       gl.uniform1f(lineProgram.at('uLit'), lit);
       gl.uniform1f(lineProgram.at('uGain'), gain * gainAll);
+      if (tint) gl.uniform4f(lineProgram.at('uTint'), tint[0], tint[1], tint[2], 0.7);
+      else gl.uniform4f(lineProgram.at('uTint'), 0, 0, 0, 0);
       batch.draw();
     };
   }
@@ -725,6 +763,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
 
   /** Advances the camera and draws, unless nothing has changed since the last frame drawn. */
   function frame(now, p, pal, sync) {
+    if (unsized) return;
     const real = performance.now();
     // nothing below needs to run more than ~30 times a second unless the camera is in motion
     if (started && !dirty && held <= 0 && !pointers.size && real - lastReal < 30) return;
@@ -740,7 +779,15 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
       started = true;
       setView(camera.view, { snap: true });
       camera.forced = initialCamera;
+      if (initialCamera) camera.follow = false;
     }
+    if (entrance && !camera.forced) {
+      setView(camera.view === 'branch' ? 'overview' : camera.view);
+      camera.yaw = 0;
+      camera.pitch = 0;
+      camera.fit = clampFit(camera.goalFit * 1.3);
+    }
+    entrance = false;
 
     // camera: ease toward the view's goal; tracking views follow their moving joint
     const branch = camera.branch && arm(camera.branch.path, camera.branch.generation, angles, params);
@@ -749,6 +796,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     camera.base = slerp(camera.base, quatFromMat(goal.base), k);
     camera.target = camera.target.map((v, i) => v + (goal.target[i] - v) * k);
     camera.emphasis = camera.emphasis.map((v, i) => v + (goal.emphasis[i] - v) * k);
+    if (camera.follow) camera.goalFit = goal.fit;
     camera.yaw += (camera.goalYaw - camera.yaw) * k;
     camera.pitch += (camera.goalPitch - camera.pitch) * k;
     camera.fit *= (camera.goalFit / camera.fit) ** k;
@@ -795,6 +843,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     });
     const focal = (FOCAL * height) / 2; // CSS px per world unit at unit depth
     const tones = new Float32Array([...pal.ink, ...pal.accent, ...pal.deep].map((v) => v / 255));
+    const unit = Object.values(unitTones(pal)).map((tone) => tone.map((v) => v / 255)); // hour, minute, second
     const day = smoothstep(-0.2, 0.3, solarAltitude(p.dayFraction));
     const lift = 1 + sync.e * 0.6;
     const l1 = params.l0 * params.ratio;
@@ -812,7 +861,10 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
       yearKey = key;
       yearBatch.replace(yearRing(now.getFullYear(), now.getMonth() + 1));
     }
-    const far = smoothstep(1.3, 2.8, camera.fit); // the year comes forward as the camera pulls back
+    // Each larger scale is drawn only once the camera has pulled back far enough to hold it.
+    const gains = scaleGains(camera.fit);
+    state.gains = gains;
+    const far = gains.year;
     const sunLongitude = solarLongitude((year.fraction * year.total));
     const annualSun = onRing(ECLIPTIC, sunLongitude, RADIUS.year);
     const moonAt = onRing(LUNAR, sunLongitude + luna.phase * TAU, RADIUS.moon);
@@ -820,27 +872,26 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     state.moonAt = moonAt;
 
     const line = useLines(tones, 1);
-    line(yearBatch, model(ECLIPTIC), year.fraction, 0.16 + 0.84 * far);
-    line(circleBatch, model(LUNAR, RADIUS.moon), 1, 0.3 + 0.4 * far);
-    // seen from inside the tree, the great rings recede so they do not cut across the view
-    const rings = (0.25 + 0.75 * smoothstep(0.12, 0.9, camera.fit)) * lift;
-    line(dayBatch, model(IDENTITY), p.dayFraction, 0.8 * rings);
+    line(yearBatch, model(ECLIPTIC), year.fraction, far);
+    line(circleBatch, model(LUNAR, RADIUS.moon), 1, 0.7 * gains.moon);
+    line(dayBatch, model(IDENTITY), p.dayFraction, 0.8 * gains.day * lift);
 
     // ── three nested rings: hours fixed, minutes carried by the hour, seconds by the minute ──
+    const rings = gains.rings * lift;
     const minuteFlash = still ? 0 : Math.exp(-p.sec * 2.2);
-    line(dialBatch, model(IDENTITY, RADIUS.hour), angles[0] / TAU, 0.95 * rings);
-    line(numeralBatch, model(IDENTITY), 1, rings);
-    line(dialBatch, model(chain.dials[1], RADIUS.minute), angles[1] / TAU, 0.62 * rings);
-    line(dialBatch, model(chain.dials[2], RADIUS.second), angles[2] / TAU, (0.5 + 0.9 * minuteFlash) * rings);
+    line(dialBatch, model(IDENTITY, RADIUS.hour), angles[0] / TAU, 0.95 * rings, unit[0]);
+    line(numeralBatch, model(IDENTITY), 1, rings * gains.numerals);
+    line(dialBatch, model(chain.dials[1], RADIUS.minute), angles[1] / TAU, 0.7 * rings, unit[1]);
+    line(dialBatch, model(chain.dials[2], RADIUS.second), angles[2] / TAU, (0.5 + 0.9 * minuteFlash) * rings, unit[2]);
     // the orbits the three hands actually sweep
-    line(dialBatch, model(IDENTITY, params.l0), angles[0] / TAU, 0.42);
-    line(dialBatch, model(chain.dials[1], l1, chain.arms[0].tip), angles[1] / TAU, 0.5);
-    line(dialBatch, model(chain.dials[2], l2, chain.arms[1].tip), angles[2] / TAU, 0.6);
+    line(dialBatch, model(IDENTITY, params.l0), angles[0] / TAU, 0.6, unit[0]);
+    line(dialBatch, model(chain.dials[1], l1, chain.arms[0].tip), angles[1] / TAU, 0.6, unit[1]);
+    line(dialBatch, model(chain.dials[2], l2, chain.arms[1].tip), angles[2] / TAU, 0.6, unit[2]);
 
     // loose lines: the gnomon's shadow across the day ring, and the sight from the centre to the annual sun
     looseCount = 0;
-    loose([0, 0, 0], sun.map((v) => -v), DEEP, 0.25 + 0.5 * day, 1.6);
-    loose([0, 0, 0], sun, ACCENT, 0.12, 1);
+    loose([0, 0, 0], sun.map((v) => -v), DEEP, (0.25 + 0.5 * day) * gains.day, 1.6);
+    loose([0, 0, 0], sun, ACCENT, 0.12 * gains.day, 1);
     loose([0, 0, 0], annualSun, ACCENT, 0.3 * far, 1);
     loose(moonAt, annualSun, INK, 0.12 * far, 1);
     looseBatch.update(looseData, looseCount);
@@ -856,6 +907,9 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     gl.uniform3fv(treeProgram.at('uEmphasis'), camera.emphasis);
     gl.uniform1f(treeProgram.at('uFocal'), focal * dpr);
     gl.uniform1f(treeProgram.at('uGain'), lift);
+    gl.uniform3fv(treeProgram.at('uUnitTones[0]'), unit.flat());
+    gl.uniform3f(treeProgram.at('uPulse'), 0.12, 0.6, 1.9);
+    gl.uniform3f(treeProgram.at('uSwell'), 0.5 * sync.e, 0.7 * minuteFlash, 0);
     gl.uniform1f(treeProgram.at('uDust'), 0.16 * (1 - params.expanse));
     // a wavefront leaves the centre on each second and reaches the last generation as the next begins
     gl.uniform1f(treeProgram.at('uFront'), still ? -9 : (p.sec % 1) * (generations + 2) - 1);
@@ -879,19 +933,20 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
       return s.w > 0 ? Math.max(least, (2 * radius * focal) / s.w) : 0;
     };
     spriteCount = 0;
-    sprite(sun.map((v) => v * 2.6), size * 2.2, ACCENT, 0.05 + 0.16 * day, GLOW);
+    sprite(sun.map((v) => (v / RADIUS.day) * 3.2), size * 2.2, ACCENT, 0.05 + 0.16 * day, GLOW);
     // at night the contracted tree gathers light at the centre
     sprite([0, 0, 0], px([0, 0, 0], params.l0 * 2.6, 40), ACCENT, 0.3 * (1 - params.expanse) ** 2, GLOW);
-    sprite(sun, px(sun, 0.03, 9), ACCENT, 1, SUN);
-    sprite(annualSun, px(annualSun, 0.07, 7), ACCENT, 0.15 + 0.85 * far, SUN);
-    sprite(moonAt, px(moonAt, 0.04, 11), INK, 0.95, MOON, luna.phase);
+    if (gains.day > 0.004) sprite(sun, px(sun, 0.03, 9), ACCENT, gains.day, SUN);
+    if (far > 0.004) sprite(annualSun, px(annualSun, 0.07, 7), ACCENT, far, SUN);
+    if (gains.moon > 0.004) sprite(moonAt, px(moonAt, 0.04, 11), INK, 0.95 * gains.moon, MOON, luna.phase);
     const hourAt = chain.arms[0].tip.map((v) => (v / params.l0) * RADIUS.hour);
     const minuteAt = column3(chain.arms[1].frame, 0).map((v) => v * RADIUS.minute);
     const secondAt = column3(chain.arms[2].frame, 2).map((v) => v * RADIUS.second);
-    sprite(hourAt, 9, DEEP, 1, BEAD);
-    sprite(minuteAt, 8, ACCENT, 1, BEAD);
+    const riding = Math.min(1, gains.rings);
+    sprite(hourAt, 9, DEEP, riding, BEAD);
+    sprite(minuteAt, 8, ACCENT, riding, BEAD);
     const tick = still ? 0 : Math.exp(-(p.sec % 1) * 5);
-    sprite(secondAt, 7 + 7 * tick, INK, 0.9, BEAD);
+    sprite(secondAt, 7 + 7 * tick, INK, 0.9 * riding, BEAD);
     sprite(chain.arms[0].tip, px(chain.arms[0].tip, params.l0 * 0.035, 5), DEEP, 0.9, BEAD);
     sprite(chain.arms[1].tip, px(chain.arms[1].tip, params.l0 * 0.03, 5), ACCENT, 0.9, BEAD);
     sprite([0, 0, 0], 6, INK, 0.9, BEAD);
@@ -907,7 +962,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     // ── labels that live in space ──
     place(labelNow, chain.now, 14, -18, true);
     labelMoon.textContent = `MOON · ${luna.age.toFixed(1)} d · ${Math.round(luna.illumination * 100)}% lit · mean phase`;
-    place(labelMoon, moonAt, 14, -8, moonOpen);
+    place(labelMoon, moonAt, 14, -8, moonOpen && gains.moon > 0.4);
     labelDay.textContent = `DAY ${year.ordinal}`;
     place(labelDay, annualSun, 14, -8, far > 0.5);
   }
@@ -923,14 +978,30 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   canvas.addEventListener('webglcontextlost', (event) => event.preventDefault());
   canvas.addEventListener('webglcontextrestored', () => location.reload());
 
+  /**
+   * Wakes or rests the instrument. Entering from the planar clock starts face-on,
+   * as that clock was drawn, a little way back, and lets the view turn into depth.
+   */
+  function setActive(on, { fromPlanar = false } = {}) {
+    active = on;
+    pointers.clear();
+    gesture = null;
+    main.classList.remove('is-turning');
+    if (!on) return;
+    resize();
+    lastReal = performance.now();
+    entrance = fromPlanar && !reducedMotion.matches;
+  }
+
   dial.dataset.view = camera.view;
   return {
     frame,
     resize,
+    setActive,
     setView,
     get view() {
       return camera.view;
     },
-    describe: () => ({ generations, arms: 2 ** (generations + 1) - 2, ratio: state.params?.ratio ?? 0 }),
+    describe: (dayFraction) => ({ generations, arms: 2 ** (generations + 1) - 2, ratio: treeParams(dayFraction).ratio }),
   };
 }

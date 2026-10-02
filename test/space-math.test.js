@@ -4,7 +4,7 @@ import { parts } from '../public/time-math.js';
 import {
   ARM, DIAL, ECLIPTIC, FOCAL, IDENTITY, LIMITS, RAD, RADIUS, VIEWS, WAKE_OFFSETS, apply, arm, cameraBasis,
   clampFit, clampPitch, clockAngles, column, dailySun, distanceFor, dot, matFromQuat, mul, nowAt, onRing,
-  principal, project, quatFromMat, slerp, solarLongitude, treeParams, turn, viewGoal, viewProjection, wakeAlpha,
+  principal, project, quatFromMat, scaleGains, slerp, solarLongitude, treeParams, turn, viewGoal, viewProjection, wakeAlpha,
 } from '../public/space-math.js';
 import { romanStrokes, sigilStrokes } from '../public/engraving.js';
 
@@ -106,11 +106,62 @@ test('the tree breathes: compact at midnight, space-filling at noon', () => {
   near(midnight.expanse, 0);
   near(NOON.ratio ** 3, 0.5); // the ratio at which a 3D H-tree fills space
   assert.ok(midnight.ratio < NOON.ratio && midnight.l0 < NOON.l0);
-  // farthest reach of the aligned lattice stays inside the seconds ring at noon
-  const reach = ({ l0, ratio }) => (l0 / (1 - ratio ** 3)) * Math.hypot(1, ratio, ratio * ratio);
-  assert.ok(reach(NOON) < RADIUS.second);
-  assert.ok(reach(midnight) < 0.4);
+  // `reach` is the corner of the aligned lattice: the sum of every arm along each axis
+  const corner = ({ l0, ratio }) => (l0 / (1 - ratio ** 3)) * Math.hypot(1, ratio, ratio * ratio);
+  near(NOON.reach, corner(NOON));
+  near(midnight.reach, corner(midnight));
+  assert.ok(midnight.reach < NOON.reach / 2);
+  // at noon the face of the lattice is inscribed in the hour ring: its corner in the hour plane just reaches it
+  const face = (NOON.l0 / (1 - NOON.ratio ** 3)) * Math.hypot(1, NOON.ratio);
+  assert.ok(face < RADIUS.hour && face > 0.95 * RADIUS.hour);
   near(treeParams(0.25).expanse, 0.5);
+});
+
+test('reach is a fair measure of the tree at any time, not only when it is aligned', () => {
+  for (const [h, m, s] of [[0, 20, 13], [3, 17, 41], [9, 41, 0], [16, 27, 36], [21, 5, 50]]) {
+    const p = at(h, m, s);
+    const params = treeParams(p.dayFraction);
+    const angles = clockAngles(p);
+    let farthest = 0;
+    for (let path = 0; path < 2 ** 9; path++) farthest = Math.max(farthest, Math.hypot(...arm(path, 8, angles, params).tip));
+    assert.ok(farthest > 0.75 * params.reach && farthest < 1.25 * params.reach, `${h}:${m}:${s} ${farthest} vs ${params.reach}`);
+  }
+});
+
+test('the default view frames the tree itself, at midnight as at noon', () => {
+  for (const dayFraction of [0, 0.2, 0.5, 0.7, 0.9]) {
+    const params = treeParams(dayFraction);
+    const goal = viewGoal('overview', principal([0, 0, 0], params), params);
+    // the reach sits between 70% and 90% of the way to the edge of the frame
+    assert.ok(params.reach / goal.fit > 0.7 && params.reach / goal.fit < 0.9);
+    // and the day, the moon and the year are not yet in the picture
+    const gains = scaleGains(goal.fit);
+    assert.equal(gains.day, 0);
+    assert.equal(gains.moon, 0);
+    assert.equal(gains.year, 0);
+  }
+});
+
+test('scales arrive in order as the camera pulls back: day, moon, year', () => {
+  assert.ok(RADIUS.hour < RADIUS.day && RADIUS.day < RADIUS.moon && RADIUS.moon < RADIUS.year);
+  const first = (key) => {
+    for (let fit = 0.1; fit < LIMITS.fitMax; fit += 0.05) if (scaleGains(fit)[key] > 0.5) return fit;
+    return Infinity;
+  };
+  assert.ok(first('day') < first('moon') && first('moon') < first('year'));
+  // each is fully drawn by the time the camera holds its ring, and stays so
+  for (const key of ['day', 'moon', 'year']) {
+    assert.ok(scaleGains(RADIUS[key] * 1.3)[key] > 0.9, key);
+    assert.equal(scaleGains(LIMITS.fitMax)[key], 1);
+  }
+  // the year view shows everything; the hour rings are whole whenever they fit the frame
+  const year = scaleGains(viewGoal('year', principal([0, 0, 0], NOON), NOON).fit);
+  assert.ok(year.day === 1 && year.moon === 1 && year.year > 0.95);
+  near(scaleGains(1.3).rings, 1);
+  near(scaleGains(1.3).numerals, 1);
+  // deep inside the tree, and far inside the rings, they recede but never vanish
+  assert.ok(scaleGains(0.05).rings > 0 && scaleGains(0.05).rings < 0.3);
+  assert.equal(scaleGains(0.6).numerals, 0);
 });
 
 test('carried dials: zero where the hand rests, read clockwise', () => {
@@ -173,7 +224,7 @@ test('projection: the target lands on the dial, and fit fills it', () => {
   const width = 1600;
   const height = 1000;
   const dial = { size: 800, cx: 700, cy: 520 };
-  const fit = 1.36;
+  const fit = 1.2;
   const m = viewProjection({
     basis: IDENTITY,
     target: [0.2, -0.1, 0.3],
