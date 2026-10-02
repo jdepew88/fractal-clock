@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check public/clock.js && node --check public/planar.js && node --check public/mode.js && node --check public/space.js && node --check public/space-math.js && node --check public/engraving.js && node --check public/glyphs.js && node --check public/time-math.js",
+    "check": "node --check public/clock.js && node --check public/planar.js && node --check public/mode.js && node --check public/calibration.js && node --check public/space.js && node --check public/space-math.js && node --check public/engraving.js && node --check public/glyphs.js && node --check public/time-math.js",
     "dev": "npx wrangler dev"
   }
 }

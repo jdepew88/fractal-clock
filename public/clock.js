@@ -4,6 +4,9 @@ import {
 } from './time-math.js';
 import { cuneiform, monthGlyph, moonGlyph } from './glyphs.js';
 import { PLANAR, SPATIAL, initialMode, parseCamera, withMode } from './mode.js';
+import {
+  CANONICAL, KEYS, SCALES, formatSetting, hueOf, isCanonical, parseCalibration, recursionReading, settle, tinted, tuningFor,
+} from './calibration.js';
 import { createPlanar } from './planar.js';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -93,11 +96,22 @@ document.addEventListener('click', (event) => {
   target?.classList.toggle('is-open');
 });
 
-let pal = palette(12);
+// ── calibration ──────────────────────────────────────────────────────────────
+// Seven scales adjust how the present time is drawn, never the time itself. One
+// set of settings serves both instruments and lasts as long as the page does;
+// ?cal=hour,minute,second,iterations,ratio,depth,hue opens on a given set.
+const settings = parseCalibration(query);
+let tuning = tuningFor(settings);
+
+let pal = tinted(palette(12), tuning.hue);
 let builtYear = null;
 
 function everySecond(now, p) {
-  pal = palette(p.hour);
+  // the palette of the hour, with the instrument's own tones turned by the hue scale
+  pal = tinted(palette(p.hour), tuning.hue);
+  const hue = `${hueOf(pal.accent)}°`;
+  if (shown.get('read-hue') !== hue) $('set-hue').setAttribute('aria-valuetext', hue);
+  put('read-hue', hue);
   for (const key of ['bg', 'ink', 'accent', 'deep']) {
     const value = pal[key].join(' ');
     if (shown.get(key) !== value) {
@@ -188,12 +202,20 @@ function everySecond(now, p) {
   put('unix', String(Math.floor(now.getTime() / 1000)));
   put('jd', julianDate(now).toFixed(5));
 
-  if (mode === SPATIAL) {
-    const { generations, arms, ratio } = space.describe(p.dayFraction);
-    put('recursion', `${generations} GENERATIONS · ${arms.toLocaleString('en-US')} ARMS · RATIO ${ratio.toFixed(3)}`);
-  } else {
-    const { depth, hands, ratio } = planar.describe();
-    put('recursion', `DEPTH ${depth} · ${hands.toLocaleString('en-US')} HANDS · RATIO ${ratio}`);
+  // Recursion: what is rendered, set against what the Iter scale asks for where a small screen renders less
+  const spatial = mode === SPATIAL;
+  const drawn = spatial ? space.describe(p.dayFraction) : planar.describe();
+  const rendered = spatial ? drawn.generations : drawn.depth;
+  const [summary, detail] = recursionReading({ spatial, drawn: rendered, full: drawn.full, count: spatial ? drawn.arms : drawn.hands, ratio: drawn.ratio });
+  put('recursion', summary);
+  put('recursion-detail', detail);
+  const reduced = rendered !== drawn.full;
+  const asked = !reduced ? String(settings.iterations)
+    : `${settings.iterations}, rendered ${spatial ? `as ${rendered} of ${drawn.full} generations` : `at depth ${rendered}`} on this screen`;
+  if (shown.get('asked') !== asked) {
+    shown.set('asked', asked);
+    main.classList.toggle('is-reduced', reduced);
+    $('set-iterations').setAttribute('aria-valuetext', asked);
   }
 }
 
@@ -213,7 +235,7 @@ function everyFrame(p) {
 const FADE = 700; // ms; matches the cross-fade in styles.css
 const selectorButtons = [...document.querySelectorAll('.selector button')];
 const viewButtons = [...document.querySelectorAll('.modes button')];
-const planar = createPlanar({ sky: $('sky'), canvas: $('orrery'), main, dial: dialEl, reducedMotion });
+const planar = createPlanar({ sky: $('sky'), canvas: $('orrery'), main, dial: dialEl, reducedMotion, tuning });
 let mode = PLANAR;
 let space = null;
 let spaceRequest = null;
@@ -230,6 +252,7 @@ function loadSpace() {
       reducedMotion,
       initialView: query.get('view') ?? 'overview',
       initialCamera: parseCamera(query),
+      tuning,
       onView: (name) => {
         for (const button of viewButtons) button.setAttribute('aria-pressed', String(button.dataset.view === name));
       },
@@ -269,6 +292,54 @@ async function setMode(next, { initial = false } = {}) {
 
 for (const button of selectorButtons) button.addEventListener('click', () => setMode(button.dataset.mode));
 document.querySelector('.throw').addEventListener('click', () => setMode(mode === SPATIAL ? PLANAR : SPATIAL));
+
+// The scales themselves. Their limits are in the markup (a test holds them to
+// calibration.js); here they are read, shown, and handed to both instruments.
+function showCalibration() {
+  for (const key of KEYS) {
+    const input = $(`set-${key}`);
+    input.value = settings[key];
+    input.closest('.scale').classList.toggle('is-moved', settings[key] !== CANONICAL[key]);
+    if (key !== 'hue') put(`read-${key}`, formatSetting(key, settings[key])); // the hue scale reads the hue itself, each second
+  }
+  const modified = !isCanonical(settings);
+  main.classList.toggle('is-modified', modified);
+  put('calibration-state', modified ? 'Modified' : '');
+  $('canonical').hidden = !modified;
+}
+
+function calibrate() {
+  tuning = tuningFor(settings);
+  planar.tune(tuning);
+  space?.tune(tuning);
+  showCalibration();
+  dirty = true; // colours and readings follow at the next frame, even while time is frozen
+}
+
+for (const key of KEYS) {
+  const input = $(`set-${key}`);
+  const { min, max, canonical } = SCALES[key];
+  input.closest('.rail').style.setProperty('--canonical', (canonical - min) / (max - min));
+  input.addEventListener('input', () => {
+    settings[key] = settle(key, input.value);
+    calibrate();
+  });
+  // A finger that lands on a scale and then scrolls the page was not setting it: put it back.
+  let before = settings[key];
+  input.addEventListener('pointerdown', () => {
+    before = settings[key];
+  });
+  input.addEventListener('pointercancel', () => {
+    settings[key] = before;
+    calibrate();
+  });
+}
+$('canonical').addEventListener('click', () => {
+  Object.assign(settings, CANONICAL);
+  calibrate();
+  $('set-hour').focus({ preventScroll: true }); // the button is about to leave the page
+});
+showCalibration();
 
 // ── run ──────────────────────────────────────────────────────────────────────
 let lastSecond = null;

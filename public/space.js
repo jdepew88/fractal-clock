@@ -10,6 +10,7 @@ import {
   scaleGains, solarLongitude, treeParams, viewGoal, viewProjection, wakeAlpha,
 } from './space-math.js';
 import { romanStrokes, sigilStrokes } from './engraving.js';
+import { spatialGenerations } from './calibration.js';
 
 const INK = 0;
 const ACCENT = 1;
@@ -94,6 +95,11 @@ uniform float uFocal;
 uniform float uDpr;
 uniform float uGain;
 uniform float uDust; // extra light on the finest generations, strongest at midnight
+// the calibration, per unit: the length and the line weight of its arms, relative
+// to the canonical tree, and the least brightness of the three hands that tell the time
+uniform vec3 uSpan;
+uniform vec3 uWeight;
+uniform vec3 uFloor;
 
 // Hours are drawn heavy and steady, minutes plain, seconds fine and bright:
 // width as a fraction of length, its limits in px, and brightness.
@@ -116,15 +122,15 @@ void main() {
     path = floor(path * 0.5);
     frame = frame * turn(unit, uCos[unit] * flip, uSin[unit] * flip);
     base = tip;
-    tip += armOf(frame, unit) * len;
+    tip += armOf(frame, unit) * (len * uSpan[unit]);
     if (i < generation) len *= uRatio;
   }
   int unit = generation - (generation / 3) * 3;
   bool hand = aPath < 0.5 && generation < 3;
 
   float depth = max((uViewProj * vec4((base + tip) * 0.5, 1.0)).w, uNear);
-  float lengthPx = len * uFocal / depth;
-  float width = clamp(lengthPx * SLENDER[unit], FINEST[unit] * uDpr, BROADEST[unit] * uDpr) * (hand ? 1.5 : 1.0);
+  float lengthPx = len * uSpan[unit] * uFocal / depth;
+  float width = clamp(lengthPx * SLENDER[unit], FINEST[unit] * uDpr, BROADEST[unit] * uDpr) * (hand ? 1.5 : 1.0) * uWeight[unit];
   // the hour arms carry a soft glow, on those large enough to hold one
   if (unit == 0 && lengthPx > 14.0 * uDpr) gHalo = vec2(0.26, width * 1.5);
   float shade;
@@ -136,7 +142,7 @@ void main() {
   float pulse = 1.0 + uPulse[unit] * exp(-pow(uFront - aGeneration, 2.0) / 0.7) + uSwell[unit];
   float alpha = (LIGHT[unit] * pow(0.6, octave) + 0.05 + uDust) * pulse * uEmphasis[unit] * uGain;
   alpha *= smoothstep(0.25, 1.6, lengthPx);
-  if (hand) alpha = max(alpha, 0.9);
+  if (hand) alpha = max(alpha, uFloor[unit]);
   vColor = vec4(uUnitTones[unit], min(alpha, 1.0) * shade);
 }
 `;
@@ -151,6 +157,7 @@ uniform float uRatio;
 uniform float uL0;
 uniform vec3 uTones[3];
 uniform float uDpr;
+uniform vec3 uSpan;
 
 vec3 nowAt(float dt) {
   vec3 a = uAngles - dt * vec3(0.00014544410, 0.0017453293, 0.10471976);
@@ -159,7 +166,7 @@ vec3 nowAt(float dt) {
   float len = uL0;
   for (int unit = 0; unit < 3; unit++) {
     frame = frame * turn(unit, cos(a[unit]), sin(a[unit]));
-    tip += armOf(frame, unit) * len;
+    tip += armOf(frame, unit) * (len * uSpan[unit]);
     len *= uRatio;
   }
   return tip;
@@ -456,11 +463,13 @@ function wakeInstances() {
   return new Float32Array(data);
 }
 
-function model(frame, scale = 1, at = [0, 0, 0]) {
+// `depth` presses whatever the matrix places toward the plane of the hours, or
+// draws it out of that plane, as the tree itself is; `at` is where it already stands.
+function model(frame, scale = 1, at = [0, 0, 0], depth = 1) {
   return [
-    frame[0] * scale, frame[1] * scale, frame[2] * scale, 0,
-    frame[3] * scale, frame[4] * scale, frame[5] * scale, 0,
-    frame[6] * scale, frame[7] * scale, frame[8] * scale, 0,
+    frame[0] * scale, frame[1] * scale, frame[2] * scale * depth, 0,
+    frame[3] * scale, frame[4] * scale, frame[5] * scale * depth, 0,
+    frame[6] * scale, frame[7] * scale, frame[8] * scale * depth, 0,
     at[0], at[1], at[2], 1,
   ];
 }
@@ -470,9 +479,10 @@ const wrapAngle = (a) => a - TAU * Math.round(a / TAU);
 // ── the instrument ───────────────────────────────────────────────────────────
 /**
  * Builds the scene on `canvas`. Returns null when WebGL 2 is unavailable.
- * `frame(now, p, palette, sync)` draws; `setView(name)` moves the camera.
+ * `frame(now, p, palette, sync)` draws; `setView(name)` moves the camera;
+ * `tune(tuning)` takes a new calibration (see calibration.js).
  */
-export function createSpace({ canvas, main, dial, labels, reducedMotion, onView, initialView, initialCamera }) {
+export function createSpace({ canvas, main, dial, labels, reducedMotion, onView, initialView, initialCamera, tuning }) {
   const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, powerPreference: 'low-power' });
   if (!gl) return null;
 
@@ -486,7 +496,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   const spriteProgram = createProgram(gl, SPRITE_VS, SPRITE_FS);
 
   const small = () => main.clientWidth < 700;
-  let generations = small() ? 10 : 12;
+  let generations = spatialGenerations(tuning.iterations, small());
   const tree = createBatch(gl, treeProgram, corners, [['aPath', 1], ['aGeneration', 1]], treeInstances(12));
   const wake = createBatch(gl, wakeProgram, corners, [['aWake', 3]], wakeInstances());
   const dialBatch = createBatch(gl, lineProgram, corners, LINE_LAYOUT, dial60());
@@ -571,7 +581,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     canvas.width = Math.round(mainBox.width * dpr);
     canvas.height = Math.round(height * dpr);
     geometry = { width: mainBox.width, height, dpr, size, cx: dialBox.left - mainBox.left + size / 2, cy: top + size / 2 };
-    generations = small() ? 10 : 12;
+    generations = spatialGenerations(tuning.iterations, small());
     dirty = true;
   }
 
@@ -598,7 +608,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   }
 
   main.addEventListener('pointerdown', (event) => {
-    if (!active || event.target.closest('.mark, .console, button, a')) return;
+    if (!active || event.target.closest('.mark, .console, .tuning, .hue, button, a')) return;
     // Touch only takes hold on the instrument itself, so the rest of the page scrolls normally.
     if (event.pointerType !== 'mouse' && !dial.contains(event.target)) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -651,7 +661,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   main.addEventListener('pointercancel', release);
 
   main.addEventListener('wheel', (event) => {
-    if (!active || event.target.closest('.note')) return;
+    if (!active || event.target.closest('.note, .tuning, .hue')) return;
     // Where the page itself scrolls, the wheel belongs to the page unless Ctrl is held.
     const pageScrolls = document.documentElement.scrollHeight > window.innerHeight + 2;
     if (pageScrolls && !event.ctrlKey) return;
@@ -661,7 +671,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
   }, { passive: false });
 
   main.addEventListener('dblclick', (event) => {
-    if (active && !event.target.closest('.mark, .console, button, a')) setView('overview');
+    if (active && !event.target.closest('.mark, .console, .tuning, .hue, button, a')) setView('overview');
   });
 
   dial.addEventListener('keydown', (event) => {
@@ -702,7 +712,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     }
     let best = null;
     let bestDistance = 24;
-    for (let g = 0; g < 6; g++) {
+    for (let g = 0; g < Math.min(6, generations); g++) {
       for (let path = 0; path < 2 ** (g + 1); path++) {
         const d = near(arm(path, g, state.angles, state.params).tip);
         if (d < bestDistance) {
@@ -733,8 +743,8 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     };
   }
 
-  function common(program, tones) {
-    gl.uniformMatrix4fv(program.at('uViewProj'), false, state.viewProj);
+  function common(program, tones, viewProj = state.viewProj) {
+    gl.uniformMatrix4fv(program.at('uViewProj'), false, viewProj);
     gl.uniform2f(program.at('uViewport'), canvas.width, canvas.height);
     gl.uniform1f(program.at('uNear'), state.near);
     gl.uniform2f(program.at('uFog'), state.fog[0], state.fog[1]);
@@ -772,7 +782,7 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     const still = reducedMotion.matches;
 
     const angles = clockAngles(p);
-    const params = treeParams(p.dayFraction);
+    const params = treeParams(p.dayFraction, tuning);
     const chain = principal(angles, params);
     Object.assign(state, { angles, params, chain });
     if (!started) {
@@ -841,13 +851,18 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
       far: distance + 80,
       centre: [(cx - width / 2) / (width / 2), -(cy - height / 2) / (height / 2)],
     });
+    // the tree and its wake are placed by the shaders, so they take the tree's depth through the matrix
+    const pressed = new Float32Array(state.viewProj);
+    for (let i = 8; i < 12; i++) pressed[i] *= params.depth;
     const focal = (FOCAL * height) / 2; // CSS px per world unit at unit depth
     const tones = new Float32Array([...pal.ink, ...pal.accent, ...pal.deep].map((v) => v / 255));
+    // beads and NOW take the pale tone of the seconds where the scales take the ink
+    const spriteTones = new Float32Array([...pal.fine, ...pal.accent, ...pal.deep].map((v) => v / 255));
     const unit = Object.values(unitTones(pal)).map((tone) => tone.map((v) => v / 255)); // hour, minute, second
     const day = smoothstep(-0.2, 0.3, solarAltitude(p.dayFraction));
     const lift = 1 + sync.e * 0.6;
-    const l1 = params.l0 * params.ratio;
-    const l2 = l1 * params.ratio;
+    const [l0, l1, l2] = chain.arms.map((each) => each.length);
+    const flat = params.depth;
     const year = yearProgress(now);
     const luna = lunar(now);
 
@@ -881,12 +896,12 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     const minuteFlash = still ? 0 : Math.exp(-p.sec * 2.2);
     line(dialBatch, model(IDENTITY, RADIUS.hour), angles[0] / TAU, 0.95 * rings, unit[0]);
     line(numeralBatch, model(IDENTITY), 1, rings * gains.numerals);
-    line(dialBatch, model(chain.dials[1], RADIUS.minute), angles[1] / TAU, 0.7 * rings, unit[1]);
-    line(dialBatch, model(chain.dials[2], RADIUS.second), angles[2] / TAU, (0.5 + 0.9 * minuteFlash) * rings, unit[2]);
+    line(dialBatch, model(chain.dials[1], RADIUS.minute, undefined, flat), angles[1] / TAU, 0.7 * rings, unit[1]);
+    line(dialBatch, model(chain.dials[2], RADIUS.second, undefined, flat), angles[2] / TAU, (0.5 + 0.9 * minuteFlash) * rings, unit[2]);
     // the orbits the three hands actually sweep
-    line(dialBatch, model(IDENTITY, params.l0), angles[0] / TAU, 0.6, unit[0]);
-    line(dialBatch, model(chain.dials[1], l1, chain.arms[0].tip), angles[1] / TAU, 0.6, unit[1]);
-    line(dialBatch, model(chain.dials[2], l2, chain.arms[1].tip), angles[2] / TAU, 0.6, unit[2]);
+    line(dialBatch, model(IDENTITY, l0), angles[0] / TAU, 0.6, unit[0]);
+    line(dialBatch, model(chain.dials[1], l1, chain.arms[0].tip, flat), angles[1] / TAU, 0.6, unit[1]);
+    line(dialBatch, model(chain.dials[2], l2, chain.arms[1].tip, flat), angles[2] / TAU, 0.6, unit[2]);
 
     // loose lines: the gnomon's shadow across the day ring, and the sight from the centre to the annual sun
     looseCount = 0;
@@ -899,12 +914,15 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
 
     // ── the tree ──
     gl.useProgram(treeProgram.program);
-    common(treeProgram, tones);
+    common(treeProgram, tones, pressed);
     gl.uniform3f(treeProgram.at('uCos'), Math.cos(angles[0]), Math.cos(angles[1]), Math.cos(angles[2]));
     gl.uniform3f(treeProgram.at('uSin'), Math.sin(angles[0]), Math.sin(angles[1]), Math.sin(angles[2]));
     gl.uniform1f(treeProgram.at('uRatio'), params.ratio);
     gl.uniform1f(treeProgram.at('uL0'), params.l0);
-    gl.uniform3fv(treeProgram.at('uEmphasis'), camera.emphasis);
+    gl.uniform3fv(treeProgram.at('uEmphasis'), camera.emphasis.map((v, i) => v * tuning.light[i]));
+    gl.uniform3fv(treeProgram.at('uSpan'), params.span);
+    gl.uniform3fv(treeProgram.at('uWeight'), tuning.stature);
+    gl.uniform3fv(treeProgram.at('uFloor'), tuning.floor.map((v) => v * 0.9));
     gl.uniform1f(treeProgram.at('uFocal'), focal * dpr);
     gl.uniform1f(treeProgram.at('uGain'), lift);
     gl.uniform3fv(treeProgram.at('uUnitTones[0]'), unit.flat());
@@ -921,7 +939,8 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
 
     // ── the wake of NOW ──
     gl.useProgram(wakeProgram.program);
-    common(wakeProgram, tones);
+    common(wakeProgram, tones, pressed);
+    gl.uniform3fv(wakeProgram.at('uSpan'), params.span);
     gl.uniform3fv(wakeProgram.at('uAngles'), angles);
     gl.uniform1f(wakeProgram.at('uRatio'), params.ratio);
     gl.uniform1f(wakeProgram.at('uL0'), params.l0);
@@ -939,23 +958,24 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     if (gains.day > 0.004) sprite(sun, px(sun, 0.03, 9), ACCENT, gains.day, SUN);
     if (far > 0.004) sprite(annualSun, px(annualSun, 0.07, 7), ACCENT, far, SUN);
     if (gains.moon > 0.004) sprite(moonAt, px(moonAt, 0.04, 11), INK, 0.95 * gains.moon, MOON, luna.phase);
-    const hourAt = chain.arms[0].tip.map((v) => (v / params.l0) * RADIUS.hour);
-    const minuteAt = column3(chain.arms[1].frame, 0).map((v) => v * RADIUS.minute);
-    const secondAt = column3(chain.arms[2].frame, 2).map((v) => v * RADIUS.second);
+    const ringPoint = (frame, column, radius) => column3(frame, column).map((v, i) => v * radius * (i === 2 ? flat : 1));
+    const hourAt = ringPoint(chain.arms[0].frame, 1, RADIUS.hour);
+    const minuteAt = ringPoint(chain.arms[1].frame, 0, RADIUS.minute);
+    const secondAt = ringPoint(chain.arms[2].frame, 2, RADIUS.second);
     const riding = Math.min(1, gains.rings);
     sprite(hourAt, 9, DEEP, riding, BEAD);
     sprite(minuteAt, 8, ACCENT, riding, BEAD);
     const tick = still ? 0 : Math.exp(-(p.sec % 1) * 5);
     sprite(secondAt, 7 + 7 * tick, INK, 0.9 * riding, BEAD);
-    sprite(chain.arms[0].tip, px(chain.arms[0].tip, params.l0 * 0.035, 5), DEEP, 0.9, BEAD);
-    sprite(chain.arms[1].tip, px(chain.arms[1].tip, params.l0 * 0.03, 5), ACCENT, 0.9, BEAD);
+    sprite(chain.arms[0].tip, px(chain.arms[0].tip, params.l0 * 0.035, 5), DEEP, 0.9 * tuning.floor[0], BEAD);
+    sprite(chain.arms[1].tip, px(chain.arms[1].tip, params.l0 * 0.03, 5), ACCENT, 0.9 * tuning.floor[1], BEAD);
     sprite([0, 0, 0], 6, INK, 0.9, BEAD);
     sprite(chain.now, px(chain.now, l2 * 0.2, 26) * (1 + 0.25 * tick), INK, 1, NOW);
     gl.useProgram(spriteProgram.program);
     gl.uniformMatrix4fv(spriteProgram.at('uViewProj'), false, state.viewProj);
     gl.uniform2f(spriteProgram.at('uViewport'), canvas.width, canvas.height);
     gl.uniform1f(spriteProgram.at('uNear'), state.near);
-    gl.uniform3fv(spriteProgram.at('uTones[0]'), tones);
+    gl.uniform3fv(spriteProgram.at('uTones[0]'), spriteTones);
     sprites.update(spriteData, spriteCount);
     sprites.draw();
 
@@ -999,9 +1019,21 @@ export function createSpace({ canvas, main, dial, labels, reducedMotion, onView,
     resize,
     setActive,
     setView,
+    /** Takes a new calibration; the next frame draws it, whether or not time is moving. */
+    tune(next) {
+      tuning = next;
+      generations = spatialGenerations(tuning.iterations, small());
+      dirty = true;
+    },
     get view() {
       return camera.view;
     },
-    describe: (dayFraction) => ({ generations, arms: 2 ** (generations + 1) - 2, ratio: treeParams(dayFraction).ratio }),
+    // `full` is what the calibration asks for; a small screen renders two generations fewer
+    describe: (dayFraction) => ({
+      generations,
+      full: spatialGenerations(tuning.iterations, false),
+      arms: 2 ** (generations + 1) - 2,
+      ratio: treeParams(dayFraction, tuning).ratio,
+    }),
   };
 }

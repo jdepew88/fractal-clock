@@ -79,6 +79,15 @@ body {
   visibility: hidden;
 }
 
+/* a sentence shown only while this screen renders less recursion than the Iter scale asks for */
+.when-reduced {
+  display: none;
+}
+
+.is-reduced .when-reduced {
+  display: inline;
+}
+
 /* a line of a note that belongs to one instrument only */
 [data-mode="2d"] .in-3d,
 [data-mode="3d"] .in-2d {
@@ -176,6 +185,7 @@ body {
 
 .eyebrow,
 .mark h2,
+.bank h2,
 .inscription {
   font-size: 0.62rem;
   font-weight: 400;
@@ -461,10 +471,24 @@ body {
 /* ── perimeter: inscription, the console under the dial, machine time ── */
 
 .inscription,
+.tuning,
 .console,
 .machine {
   grid-row: 2;
   align-self: end;
+}
+
+.inscription,
+.tuning {
+  grid-column: 1;
+}
+
+.console {
+  grid-column: 2;
+}
+
+.machine {
+  grid-column: 3;
 }
 
 .inscription span {
@@ -739,6 +763,226 @@ body {
   text-align: right;
 }
 
+/* ── calibration: seven scales, engraved on the plate rather than built on it ──
+   Six stand together in the lower left, above the inscription; the hue stands
+   alone in the upper right. Each is a real range input, drawn as a ruled line
+   with a small lozenge riding it. */
+
+.scale {
+  display: grid;
+  grid-template-columns: 2.9rem minmax(0, 1fr) 1.8rem;
+  align-items: center;
+  column-gap: 0.5rem;
+  height: 1rem;
+  font-size: 0.54rem;
+  letter-spacing: 0.2em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgb(var(--ink) / 0.42);
+  cursor: auto;
+  transition: color 0.25s ease;
+}
+
+.scale:is(:hover, :focus-within) {
+  color: rgb(var(--ink) / 0.9);
+}
+
+.scale label {
+  cursor: pointer;
+}
+
+.scale output {
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-align: right;
+  color: rgb(var(--ink) / 0.5);
+}
+
+/* a scale that has left its canonical place says so in the accent */
+.scale.is-moved output {
+  color: rgb(var(--accent));
+}
+
+.rail {
+  position: relative;
+  height: 100%;
+}
+
+/* the ruled line: a baseline with eight divisions standing on it */
+.rail::before {
+  content: "";
+  position: absolute;
+  top: calc(50% - 4px);
+  right: 4px;
+  left: 4px;
+  height: 4px;
+  border-bottom: 1px solid rgb(var(--ink) / 0.34);
+  background: linear-gradient(90deg, rgb(var(--ink) / 0.3) 1px, transparent 1px) 0 0 / calc((100% - 1px) / 8) 100%;
+  transition: border-color 0.25s ease;
+}
+
+.scale:is(:hover, :focus-within) .rail::before {
+  border-bottom-color: rgb(var(--ink) / 0.7);
+}
+
+/* the index: where the canonical instrument stands (clock.js sets --canonical, 0..1) */
+.rail::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 8px);
+  left: calc(3.5px + (100% - 8px) * var(--canonical, 0.5));
+  width: 1px;
+  height: 8px;
+  background: rgb(var(--accent) / 0.8);
+}
+
+.rail input {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: none;
+  outline: none;
+  cursor: pointer;
+  touch-action: pan-y; /* a vertical swipe across a scale still scrolls the page */
+}
+
+.rail input::-webkit-slider-runnable-track {
+  height: 8px;
+  background: none;
+}
+
+.rail input::-moz-range-track {
+  height: 8px;
+  background: none;
+}
+
+/* the lozenge: hollow at the canonical setting, filled once moved */
+.rail input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgb(var(--accent));
+  background: rgb(var(--bg));
+  transform: rotate(45deg) scale(0.82);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.rail input::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgb(var(--accent));
+  border-radius: 0;
+  background: rgb(var(--bg));
+  transform: rotate(45deg) scale(0.82);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.is-moved .rail input::-webkit-slider-thumb {
+  background: rgb(var(--accent));
+}
+
+.is-moved .rail input::-moz-range-thumb {
+  background: rgb(var(--accent));
+}
+
+.rail input:is(:hover, :focus-visible, :active)::-webkit-slider-thumb {
+  box-shadow: 0 0 0.55rem rgb(var(--accent) / 0.75);
+  transform: rotate(45deg);
+}
+
+.rail input:is(:hover, :focus-visible, :active)::-moz-range-thumb {
+  box-shadow: 0 0 0.55rem rgb(var(--accent) / 0.75);
+  transform: rotate(45deg);
+}
+
+.rail input:focus-visible::-webkit-slider-thumb {
+  outline: 1px solid rgb(var(--ink) / 0.8);
+  outline-offset: 2px;
+}
+
+.rail input:focus-visible::-moz-range-thumb {
+  outline: 1px solid rgb(var(--ink) / 0.8);
+  outline-offset: 2px;
+}
+
+.tuning {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.3rem;
+  width: min(100%, 21rem);
+  margin-bottom: 1.5rem; /* the inscription's line */
+  cursor: auto;
+}
+
+.bank h2 {
+  margin-bottom: 0.1rem;
+  font-size: 0.54rem;
+  color: rgb(var(--ink) / 0.36);
+}
+
+/* MODIFIED, and the way back: on the inscription's line, and only when it applies */
+.state {
+  position: absolute;
+  right: 0;
+  bottom: -1.5rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.9em;
+  font-size: 0.62rem;
+  letter-spacing: 0.24em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  color: rgb(var(--accent));
+}
+
+.state button {
+  border: 0;
+  border-bottom: 1px solid rgb(var(--ink) / 0.3);
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: rgb(var(--ink) / 0.6);
+  cursor: pointer;
+  transition: color 0.25s ease, border-color 0.25s ease;
+}
+
+.state button:is(:hover, :focus-visible) {
+  border-bottom-color: rgb(var(--accent));
+  color: rgb(var(--ink));
+  outline: none;
+}
+
+.hue {
+  grid-template-columns: auto minmax(0, 1fr) 1.9rem;
+  width: 11.5rem;
+}
+
+.hue .rail::before {
+  background-size: calc((100% - 1px) / 12) 100%; /* a division every 30° */
+}
+
+/* Under a finger each scale is a 44px target. Only the row grows: the input fills
+   it, unseen, and the ruled line and the lozenge keep their size at its middle. */
+@media (pointer: coarse) {
+  .scale {
+    height: 2.75rem;
+  }
+
+  /* the hue's line stays where it stood when its row was 2rem */
+  .hue {
+    margin-top: -0.375rem;
+  }
+}
+
 .machine .value {
   font-size: 0.66rem;
   color: rgb(var(--ink) / 0.6);
@@ -770,6 +1014,8 @@ body {
   #dial,
   .wide,
   .console,
+  .hue,
+  .tuning,
   .inscription,
   .machine {
     grid-column: 1 / -1;
@@ -799,12 +1045,42 @@ body {
   .chrono { order: 1; }
   #dial { order: 2; }
   .console { order: 3; }
-  .calendar { order: 4; }
-  .wing-b .mark { order: 5; }
-  .wing-a .mark:not(.calendar) { order: 6; }
-  .wing-a .mark.wide:not(.calendar) { order: 7; }
-  .inscription { order: 8; }
-  .machine { order: 9; }
+  .hue { order: 4; }
+  .tuning { order: 5; }
+  .calendar { order: 6; }
+  .wing-b .mark { order: 7; }
+  .wing-a .mark:not(.calendar) { order: 8; }
+  .wing-a .mark.wide:not(.calendar) { order: 9; }
+  .inscription { order: 10; }
+  .machine { order: 11; }
+
+  /* the scales sit together under the console, where the dial is still in sight:
+     the hue at the right above the two banks, which take the page's two columns */
+  .hue {
+    justify-self: end;
+    width: min(100%, 13rem);
+    margin-bottom: -1.1rem;
+  }
+
+  @media (pointer: coarse) {
+    .hue {
+      margin-bottom: -1.475rem;
+    }
+  }
+
+  .tuning {
+    column-gap: 1.25rem;
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .state {
+    position: static;
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    min-height: 1.3rem;
+    margin-top: 0.3rem;
+  }
 
   .time {
     font-size: clamp(3.3rem, 16.5vw, 7rem);
@@ -868,6 +1144,20 @@ body {
   .machine {
     justify-self: start;
     text-align: left;
+  }
+}
+
+/* with room beside the time, the hue returns to the upper right of the page */
+@media (min-width: 640px) and (max-width: 1099px), (min-width: 640px) and (max-aspect-ratio: 5/4) {
+  .chrono {
+    grid-row: 1;
+  }
+
+  .hue {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+    margin-bottom: 0;
   }
 }
 

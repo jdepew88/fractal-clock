@@ -3,6 +3,7 @@
 // so it runs under node --test. The vertex shader in space.js repeats the tree walk.
 
 import { TAU, clamp, smoothstep, solarAltitude } from './time-math.js';
+import { NEUTRAL, spatialRatio } from './calibration.js';
 
 export const RAD = Math.PI / 180;
 
@@ -66,32 +67,46 @@ const SPACE_FILLING = 2 ** (-1 / 3); // ratio at which a 3D H-tree exactly fills
  * space-filling lattice whose face is inscribed in the hour ring. `reach` is
  * the radius of that aligned lattice's corner, the measure of the tree's size
  * that the default view frames.
+ *
+ * The calibration enters here and nowhere else: `span` scales the arms of each
+ * unit, `depth` scales the whole tree along Z, out of the plane of the hours,
+ * and the ratio takes the same proportional change as the planar clock's.
  */
-export function treeParams(dayFraction) {
+export function treeParams(dayFraction, tuning = NEUTRAL) {
   const expanse = (1 + solarAltitude(dayFraction)) / 2;
-  const ratio = 0.64 + (SPACE_FILLING - 0.64) * expanse;
+  const ratio = spatialRatio(0.64 + (SPACE_FILLING - 0.64) * expanse, tuning);
   const l0 = 0.3 + 0.08 * expanse;
-  return { expanse, ratio, l0, reach: (l0 / (1 - ratio ** 3)) * Math.hypot(1, ratio, ratio * ratio) };
+  const span = tuning.stature;
+  const depth = tuning.spread;
+  // The view makes room for arms that have grown and for depth that has been drawn out,
+  // but does not close in on a tree that has only been dimmed or pressed flat.
+  const [h, m, s] = span.map((v) => Math.max(1, v));
+  const corner = (l0 / (1 - ratio ** 3)) * Math.hypot(h, ratio * m, ratio * ratio * s);
+  return { expanse, ratio, l0, span, depth, reach: corner * Math.sqrt((2 + Math.max(1, depth) ** 2) / 3) };
 }
 
 /**
  * Walks the tree to one arm. Generation i turns by unit i mod 3 (hour, minute,
  * second, hour, …) about the arm of the generation before it. Bit i of `path`
  * picks which of the two opposed arms to follow; path 0 is the principal chain.
+ * `base` and `tip` are where the arm is drawn, with the tree's depth applied;
+ * `frame` is the rotation alone.
  */
-export function arm(path, generation, angles, { ratio, l0 }) {
+export function arm(path, generation, angles, { ratio, l0, span = NEUTRAL.stature, depth = 1 }) {
   let frame = IDENTITY;
   let tip = [0, 0, 0];
   let base = tip;
-  let length = l0;
+  let scale = l0;
+  let length = 0;
   for (let i = 0; i <= generation; i++) {
     const unit = i % 3;
     frame = mul(frame, turn(unit, angles[unit] + ((path >> i) & 1) * Math.PI));
     base = tip;
+    length = scale * span[unit];
     tip = add(tip, column(frame, ARM[unit]), length);
-    if (i < generation) length *= ratio;
+    scale *= ratio;
   }
-  return { base, tip, frame, length, unit: generation % 3 };
+  return { base: [base[0], base[1], base[2] * depth], tip: [tip[0], tip[1], tip[2] * depth], frame, length, unit: generation % 3 };
 }
 
 /**
@@ -278,8 +293,8 @@ export function scaleGains(fit) {
  */
 export function viewGoal(name, chain, params, branch) {
   const { arms, dials, now } = chain;
-  const l1 = params.l0 * params.ratio;
-  const l2 = l1 * params.ratio;
+  const l1 = arms[1].length;
+  const l2 = arms[2].length;
   switch (name) {
     case 'hours':
       return { target: [0, 0, 0], base: IDENTITY, yaw: 0, pitch: 0, fit: 1.22, emphasis: [1.5, 0.45, 0.3] };

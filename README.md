@@ -6,7 +6,7 @@ A homepage whose only job is to show the local date and time. It opens on a flat
 
 ```sh
 npx wrangler dev --ip 0.0.0.0 --port 8787   # serves ./public as Cloudflare Workers static assets
-npm test                                     # unit tests for the time, space and mode logic (node --test)
+npm test                                     # unit tests for the time, space, mode and calibration logic (node --test)
 npm run check                                # syntax check of the browser modules
 ```
 
@@ -23,7 +23,7 @@ Only the instrument showing is drawn. The other does no drawing work at all unti
 
 ### Planar (2D)
 
-- **Fractal clock** — every hand ends in a smaller clock (ratio 0.66) turned to face along that hand. Heavy branches turn by the hour angle, mid-tone by the minute, pale by the second. The tree is rescaled each frame so its farthest tip touches the same circle. A pulse leaves the centre each second; at `:00` the second-branches align; at the top of an hour all angles are zero, the tree collapses to one ray, and its rotations close into radial symmetry (12-fold, or 60-fold at noon and midnight).
+- **Fractal clock** — every hand ends in a smaller clock (ratio 0.66 as designed) turned to face along that hand. Heavy branches turn by the hour angle, mid-tone by the minute, pale by the second. The tree is rescaled each frame so its farthest tip touches the same circle. A pulse leaves the centre each second; at `:00` the second-branches align; at the top of an hour all angles are zero, the tree collapses to one ray, and its rotations close into radial symmetry (12-fold, or 60-fold at noon and midnight).
 - **Rings** — outer: 24 hours, read by the shadow, with ☉ opposite. Middle: 360°, where the bead is the second and the bright arc the minute (6° each). Inner: twelve hours at 30° each.
 - **Shadow** — an abstract sundial, 15° per hour, longest at 06:00 and 18:00. Background colour, light direction and the star field follow the same 24-hour angle.
 - **Sigils** — the twelve months stand under the dial; hover one to see its construction lines.
@@ -67,6 +67,28 @@ The day ring is an abstract sundial, the sun's place on the year ring uses unifo
 - **Viewpoints** under the instrument: *Overview*, *Hours* (straight down Z, an ordinary clock face), *Minutes* (down the hour arm at the minute dial), *Seconds* (down the minute arm at the seconds dial), *Now* (follows the present point), *Year*.
 - **Tap a joint** of the tree to travel to that generation.
 
+## Calibration
+
+Seven scales adjust how the present time is drawn. None of them changes the time, and at their canonical settings the instrument is exactly as designed. Six stand together in the lower left, above the inscription; the hue stands alone in the upper right. One set of settings serves both instruments, so it carries across a change between Planar and Spatial. It lasts as long as the page does: nothing is stored.
+
+| Scale | Range | Canonical | Planar (2D) | Spatial (3D) |
+| --- | --- | --- | --- | --- |
+| Hour, Minute, Second | 0 – 150 | 100 | brightness, line weight and length of that unit's hands at every level | the same three for that unit's arms in every octave, and the size of the orbit its hand sweeps |
+| Iter (iterations) | 3 – 8 | 8 | levels of recursion, 3 to 8 (one fewer on a small dial) | 5, 6, 8, 10, 11 or 12 generations (two fewer on a small screen): about as many arms as the planar clock has hands |
+| Ratio | 0.60 – 0.72 | 0.66 | a child clock's size relative to its parent | the day's own ratio raised to the matching power: 0.58 – 0.70 at midnight, 0.75 – 0.83 at noon |
+| Spread / Depth | 40 – 150 | 100 | the angle each hand makes with the hand carrying it is narrowed or widened; the three root hands keep their true angles | the tree, its rings and its wake are pressed toward the plane of the hours or drawn out of it |
+| Hue | −180° – +180° | 0° | turns the accent, the hour tone and the pale tone of the seconds together | the same tones, on the tree, its rings, the beads and NOW |
+
+- The three hands that tell the time never vanish: at zero influence they dim to just over half and shorten, but stay.
+- Above 100 the gains are deliberately gentle (light adds to light), so the densest tree does not burn out.
+- Hue is turned in OKLCH, so every tone keeps its lightness and hour, minute and second stay as far apart as the palette of the hour made them. The ground, the text and the engraved scales are not recoloured. The scale reads the resulting hue of the minute tone, which drifts through the day at the canonical setting.
+- When any scale is off its canonical place its lozenge fills, its reading takes the accent, and MODIFIED appears on the inscription's line with RESET beside it.
+- Keyboard: each scale is a range input (arrows, Page Up/Down, Home, End).
+- Under a finger (`pointer: coarse`) each scale is a 44px-tall target. Only its row grows; the ruled line and the lozenge stay the size they are. A swipe that sets off up or down across a scale scrolls the page and leaves the scale where it was.
+- A small screen renders less recursion than *Iter* asks for: one level fewer on a dial under 460px, two generations fewer in space on a page under 700px. The Recursion reading then names both numbers, `RENDER DEPTH 7 OF 8` or `RENDER 10 OF 12 GENERATIONS`, with the count of what is actually drawn on the line below. On a full-size screen it reads `DEPTH 8 · 9,840 HANDS · RATIO 0.66` as before.
+
+The limits are in `calibration.js` and were chosen by looking at both instruments at each end, at noon, at midnight and in between.
+
 ## Reproducing any state
 
 The instrument reads the real clock. Query parameters place it elsewhere, which is how the special states are tested:
@@ -81,8 +103,9 @@ The instrument reads the real clock. Query parameters place it elsewhere, which 
 | `/?t=2026-12-21T23:10:00` | Any date and time |
 | `/?t=09:41:00&freeze&mode=3d&view=seconds` | Open on a spatial viewpoint: `overview`, `hours`, `minutes`, `seconds`, `now`, `year` |
 | `/?t=00:00:00&freeze&mode=3d&cam=40,25,0.6` | Pin the spatial camera: yaw°, pitch°, and the world radius that fills the dial |
+| `/?cal=40,100,150,6,0.70,60,-120` | Open on a calibration: hour, minute, second, iterations, ratio, depth, hue. An empty place keeps its canonical value (`cal=,,,5`) |
 
-`view` and `cam` belong to the spatial instrument, so a link that carries either opens it even without `mode=3d`; `mode=2d` overrides that. Switching instruments rewrites `mode` in the address bar and leaves every other parameter alone, so a reload returns to the same instrument.
+`cal` is only read: moving a scale does not rewrite the address. `view` and `cam` belong to the spatial instrument, so a link that carries either opens it even without `mode=3d`; `mode=2d` overrides that. Switching instruments rewrites `mode` in the address bar and leaves every other parameter alone, so a reload returns to the same instrument.
 
 For automated checks, `#instrument` exposes `data-mode`, and in the spatial instrument `#dial` exposes `data-view`, `data-fit`, `data-yaw` and `data-pitch`.
 
@@ -91,6 +114,7 @@ For automated checks, `#instrument` exposes `data-mode`, and in the spatial inst
 - One instrument draws at a time. During the 0.7 s cross-fade both do; afterwards the hidden one is skipped entirely.
 - The planar dial is redrawn about 30 times a second and its background once a second.
 - The spatial geometry is static. The tree's 8,190 arms are instances whose positions the vertex shader derives from three angles, so time costs a few uniforms per frame and no geometry is rebuilt. Drawing is capped near 30 frames a second while only time moves and follows the display while the camera moves. Generations too small to see from the current distance, and scales the camera has not reached, are not drawn.
+- Moving a scale redraws the instrument showing at the next frame, also while time is frozen; the planar background is redrawn only when its colours change. No geometry is rebuilt for the spatial tree: the calibration reaches it as uniforms. When the scale is released the pacing above resumes.
 - Both stop entirely when nothing can change (`&freeze`, hidden tab), and drop to one frame a second under `prefers-reduced-motion`, which also replaces the cross-fade and camera travel with cuts.
 
 ## Layout
@@ -101,6 +125,7 @@ public/
   styles.css      layout and typography; colours are CSS variables driven by the time of day
   clock.js        time source, DOM readings, the choice of instrument, main loop
   mode.js         which instrument to open, read from and written to the query string (unit-tested)
+  calibration.js  the seven scales: limits, canonical values, what each means to both instruments, hue (unit-tested)
   planar.js       the 2D instrument: sky canvas (sundial) and dial canvas (fractal)
   space.js        the 3D instrument: WebGL 2 shaders, static geometry, camera, pointer/touch/keyboard control
   space-math.js   pure geometry: time as rotation, the tree walk, scale, camera and projection (unit-tested)

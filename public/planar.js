@@ -3,13 +3,13 @@
 // once a second, and the dial, redrawn as the hands sweep.
 
 import { TAU, angles, clamp, roman, smoothstep, solarAltitude, yearProgress } from './time-math.js';
+import { planarLevels, warp } from './calibration.js';
 
 const RAD = Math.PI / 180;
 const MONO = 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace';
 const SERIF = '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif';
 
-// Fractal: every hand ends in a child clock scaled by BRANCH_SCALE and turned to face along the hand.
-const BRANCH_SCALE = 0.66;
+// Fractal: every hand ends in a child clock, scaled by the calibrated ratio and turned to face along the hand.
 const HAND_LENGTH = [0.55, 0.8, 1]; // hour, minute, second
 const TREE_REACH = 0.72; // of the dial radius: the tree is scaled so its farthest tip lands here
 const MAX_ROOT_HAND = 0.56; // of the dial radius: limit on that scaling when the tree folds up small
@@ -19,14 +19,16 @@ const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 
 /**
  * Builds the planar instrument on its two canvases. `frame(now, p, palette, sync)`
- * draws whatever has changed; nothing is drawn while it is not active.
+ * draws whatever has changed; nothing is drawn while it is not active. `tuning`
+ * is the calibration (see calibration.js), replaced through `tune()`.
  */
-export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
+export function createPlanar({ sky, canvas, main, dial, reducedMotion, tuning }) {
   let pal = null;
   let active = false;
   let stale = true; // the canvases need sizing before the next draw
   let dirty = true;
-  let lastSecond = null;
+  let retuned = false; // the calibration changed: the dial is redrawn at the next frame, the sky only if its colours moved
+  let lastSky = '';
   let lastDrawn = null;
   let lastDraw = 0;
 
@@ -60,7 +62,6 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     skyCtx = fit(sky, geo.width, geo.height, geo.width * geo.height > 2.2e6 ? 1 : 2);
     dialCtx = fit(canvas, geo.size, geo.size, 2);
     ghostCtx = fit(ghostCanvas, geo.size, geo.size, 2);
-    treeDepth = geo.size < 460 ? 6 : 7;
     dirty = true;
   }
 
@@ -198,18 +199,21 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
   }
 
   // Built around the origin with a root second hand of length 1; `extent` is the farthest tip.
-  function buildTree(turn, depth) {
+  function buildTree(turn, depth, reach) {
     const paths = Array.from({ length: depth + 1 }, () => [new Path2D(), new Path2D(), new Path2D()]);
+    // The three root hands show the true angles. Below them, the angle each hand
+    // makes with the hand that carries it is narrowed or widened by the spread.
+    const lean = turn.map((angle) => warp(angle, tuning.spread));
     let extent = 0;
     const grow = (x, y, heading, scale, d) => {
       for (let hand = 0; hand < 3; hand++) {
-        const a = heading + turn[hand];
-        const length = HAND_LENGTH[hand] * scale;
+        const a = heading + (d ? lean : turn)[hand];
+        const length = reach[hand] * scale;
         const x2 = x + length * Math.sin(a);
         const y2 = y - length * Math.cos(a);
         paths[d][hand].moveTo(x, y);
         paths[d][hand].lineTo(x2, y2);
-        if (d < depth) grow(x2, y2, a, scale * BRANCH_SCALE, d + 1);
+        if (d < depth) grow(x2, y2, a, scale * tuning.ratio, d + 1);
         else extent = Math.max(extent, x2 * x2 + y2 * y2);
       }
     };
@@ -217,7 +221,8 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     return { paths, extent: Math.sqrt(extent) };
   }
 
-  let treeDepth = 7; // set with the layout: one level fewer on a small dial
+  // levels of recursion: the calibrated number, one fewer on a small dial
+  const levels = () => planarLevels(tuning.iterations, geo.size < 460);
 
   /** Foreground: engraved scales, the fractal clock, and the markers that ride the rings. */
   function drawDial(p, sync) {
@@ -311,11 +316,14 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     }
 
     // ── the fractal clock ──
-    const depth = treeDepth;
-    const tree = buildTree([a.hour * RAD, a.min * RAD, a.sec * RAD], depth);
+    const depth = levels() - 1;
+    // each unit's influence: the length and weight of its hands, and their light
+    const { light, stature } = tuning;
+    const reach = HAND_LENGTH.map((length, hand) => length * stature[hand]);
+    const tree = buildTree([a.hour * RAD, a.min * RAD, a.sec * RAD], depth, reach);
     // root second hand, as a fraction of R: the whole tree breathes to keep filling the dial
     const unit = Math.min(TREE_REACH / tree.extent, MAX_ROOT_HAND);
-    const tones = [deep, accent, ink];
+    const tones = [deep, accent, pal.fine];
     const weight = clamp(size / 760, 0.7, 1.25);
     // a wavefront leaves the centre on each second and reaches the tips as the next one begins
     const front = still ? -9 : (p.sec % 1) * (depth + 3) - 1;
@@ -328,8 +336,10 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
       for (let d = 0; d < levels; d++) {
         const pulse = 1 + 1.5 * Math.exp(-((front - d) ** 2) / 0.6);
         for (let hand = 0; hand < 3; hand++) {
-          const width = (hand === 0 ? 1.7 : 1) * Math.max(0.5, 2.1 * 0.76 ** d) * weight;
-          target.strokeStyle = rgba(tones[hand], Math.min(1, (0.9 * 0.72 ** d + 0.045) * pulse * gain));
+          const alpha = (0.9 * 0.72 ** d + 0.045) * pulse * gain * light[hand];
+          if (alpha < 0.004) continue;
+          const width = (hand === 0 ? 1.7 : 1) * Math.max(0.5, 2.1 * 0.76 ** d) * weight * stature[hand];
+          target.strokeStyle = rgba(tones[hand], Math.min(1, alpha));
           target.lineWidth = width / (R * unit);
           target.stroke(tree.paths[d][hand]);
         }
@@ -343,7 +353,7 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     // are drawn once off-screen and stamped around the dial.
     if (sync.e > 0.004) {
       ghostCtx.clearRect(0, 0, size, size);
-      strokeTree(ghostCtx, sync.fold === 60 ? 5 : 6, sync.e * 0.6);
+      strokeTree(ghostCtx, Math.min(depth + 1, sync.fold === 60 ? 5 : 6), sync.e * 0.6);
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.translate(c, c);
@@ -369,7 +379,7 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     // ── markers riding the rings, with hairlines back to the root hands ──
     const sights = new Path2D();
     [[a.hour, 0.76, 0], [a.min, 0.86, 1], [a.sec, 0.86, 2]].forEach(([deg, r, hand]) => {
-      ray(sights, unit * HAND_LENGTH[hand], r, deg);
+      ray(sights, unit * reach[hand], r, deg);
     });
     stroke(sights, ink, 0.1);
 
@@ -389,11 +399,11 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     // seconds bead, flaring as each second lands
     const flare = still ? 0 : Math.exp(-(p.sec % 1) * 5);
     const [bx, by] = at(0.86, a.sec);
-    ctx.fillStyle = rgba(ink, 0.18 + 0.3 * flare);
+    ctx.fillStyle = rgba(pal.fine, 0.18 + 0.3 * flare);
     ctx.beginPath();
     ctx.arc(bx, by, 4 + 4 * flare, 0, TAU);
     ctx.fill();
-    ctx.fillStyle = rgba(ink, 1);
+    ctx.fillStyle = rgba(pal.fine, 1);
     ctx.beginPath();
     ctx.arc(bx, by, 2.4, 0, TAU);
     ctx.fill();
@@ -414,11 +424,12 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     ctx.fill();
 
     // root hands, drawn solid so the plain analogue reading survives the fractal
+    // (and any calibration: they thin and dim with their unit's influence, but stay)
     ctx.lineCap = 'round';
-    [[a.hour, 0, deep, 3.2], [a.min, 1, accent, 2.2], [a.sec, 2, ink, 1.3]].forEach(([deg, hand, color, width]) => {
+    [[a.hour, 0, deep, 3.2], [a.min, 1, accent, 2.2], [a.sec, 2, pal.fine, 1.3]].forEach(([deg, hand, color, width]) => {
       const handPath = new Path2D();
-      ray(handPath, 0, unit * HAND_LENGTH[hand], deg);
-      stroke(handPath, color, 1, width * weight);
+      ray(handPath, 0, unit * reach[hand], deg);
+      stroke(handPath, color, tuning.floor[hand], width * weight * Math.max(0.8, stature[hand]));
     });
     ctx.fillStyle = rgba(bg, 1);
     ctx.strokeStyle = rgba(ink, 1);
@@ -429,20 +440,25 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
     ctx.stroke();
   }
 
-  /** Draws the sky when the second changes and the dial about 30 times a second, and nothing when time stands still. */
+  /**
+   * Draws the sky when the second or its colours change and the dial about 30
+   * times a second, and nothing when time stands still. A change of calibration
+   * redraws the dial at once.
+   */
   function frame(now, p, palette, sync) {
     if (!active) return;
     if (stale) layout();
     pal = palette;
     const time = now.getTime();
-    const second = Math.floor(time / 1000);
-    if (second !== lastSecond || dirty) {
-      lastSecond = second;
+    const skyKey = `${Math.floor(time / 1000)}|${pal.bg}|${pal.ink}|${pal.accent}|${pal.deep}`;
+    if (skyKey !== lastSky || dirty) {
+      lastSky = skyKey;
       drawSky(now, p);
-    } else if (time === lastDrawn || performance.now() - lastDraw < 30) {
+    } else if (!retuned && (time === lastDrawn || performance.now() - lastDraw < 30)) {
       return;
     }
     dirty = false;
+    retuned = false;
     lastDrawn = time;
     lastDraw = performance.now();
     drawDial(p, sync);
@@ -458,9 +474,16 @@ export function createPlanar({ sky, canvas, main, dial, reducedMotion }) {
       active = on;
       dirty = true;
     },
+    /** Takes a new calibration; the next frame draws it, whether or not time is moving. */
+    tune(next) {
+      tuning = next;
+      retuned = true;
+    },
     describe() {
       if (stale) layout();
-      return { depth: treeDepth + 1, hands: (3 ** (treeDepth + 2) - 3) / 2, ratio: BRANCH_SCALE };
+      const depth = levels();
+      // `full` is what the calibration asks for; a small dial renders one level fewer
+      return { depth, full: planarLevels(tuning.iterations, false), hands: (3 ** (depth + 1) - 3) / 2, ratio: tuning.ratio };
     },
   };
 }

@@ -160,11 +160,12 @@ export function palette(hour) {
  * One tone for each unit of time, drawn from the palette of the hour so the
  * three stay one family: the hour deeper than `deep`, the minute the accent
  * itself, the second paler than `ink`. Each end is pushed a little further
- * from the accent than the palette already places it.
+ * from the accent than the palette already places it. A palette whose hue has
+ * been turned carries `fine`, its own pale tone, for the seconds to start from.
  */
-export function unitTones({ ink, accent, deep }) {
+export function unitTones({ ink, accent, deep, fine = ink }) {
   const away = (from, k) => from.map((v, i) => Math.round(clamp(v + (v - accent[i]) * k, 0, 255)));
-  return { hour: away(deep, 0.3), minute: accent, second: away(ink, 0.35) };
+  return { hour: away(deep, 0.3), minute: accent, second: away(fine, 0.35) };
 }
 
 /**

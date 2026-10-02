@@ -26,7 +26,8 @@
       <section class="mark wide" tabindex="0">
         <h2>Recursion</h2>
         <p class="value" id="recursion">&nbsp;</p>
-        <p class="note"><span class="in-2d">Every hand ends in a smaller clock, turned to face along that hand. The heaviest branches turn by the hour angle, the mid-tone by the minute, the palest by the second. A pulse leaves the centre each second; its depth is the fraction of the second elapsed. Spatial, below the dial, opens the same clock in three dimensions.</span><span class="in-3d">Time is applied as three nested rotations: the hour about Z, the minute about Y, the second about X. Every arm is the axle its two children turn about, so each joint is a right angle, and the generations repeat hour, minute, second at a smaller scale: hours heavy and deep, minutes plain, seconds fine and bright. At twelve o'clock every twist is zero and the tree is a perfect lattice: a dense core at midnight, opening until it fills the hour ring at noon. Tap a joint to travel to it.</span></p>
+        <p class="value" id="recursion-detail"></p>
+        <p class="note"><span class="in-2d">Every hand ends in a smaller clock, turned to face along that hand. The heaviest branches turn by the hour angle, the mid-tone by the minute, the palest by the second. A pulse leaves the centre each second; its depth is the fraction of the second elapsed. Spatial, below the dial, opens the same clock in three dimensions.<span class="when-reduced"> This dial is small, so it renders one level fewer than the Iter scale asks for.</span></span><span class="in-3d">Time is applied as three nested rotations: the hour about Z, the minute about Y, the second about X. Every arm is the axle its two children turn about, so each joint is a right angle, and the generations repeat hour, minute, second at a smaller scale: hours heavy and deep, minutes plain, seconds fine and bright. At twelve o'clock every twist is zero and the tree is a perfect lattice: a dense core at midnight, opening until it fills the hour ring at noon. Tap a joint to travel to it.<span class="when-reduced"> This screen is small, so it renders two generations fewer than a full-size one would for the same Iter setting.</span></span></p>
       </section>
 
       <section class="mark" tabindex="0">
@@ -61,6 +62,12 @@
     </div>
 
     <div class="wing wing-b">
+      <div class="hue scale">
+        <label for="set-hue">Hue</label>
+        <span class="rail"><input type="range" id="set-hue" min="-180" max="180" step="1" value="0" aria-label="Hue"></span>
+        <output id="read-hue" for="set-hue">0°</output>
+      </div>
+
       <section class="mark" tabindex="0">
         <h2>Angular</h2>
         <p class="value"><small>SEC</small> <span id="ang-s">0.0°</span></p>
@@ -98,6 +105,45 @@
       </section>
     </div>
 
+    <div class="tuning" role="group" aria-label="Calibration">
+      <div class="bank">
+        <h2>Temporal</h2>
+        <div class="scale">
+          <label for="set-hour">Hour</label>
+          <span class="rail"><input type="range" id="set-hour" min="0" max="150" step="1" value="100" aria-label="Hour influence"></span>
+          <output id="read-hour" for="set-hour">100</output>
+        </div>
+        <div class="scale">
+          <label for="set-minute">Minute</label>
+          <span class="rail"><input type="range" id="set-minute" min="0" max="150" step="1" value="100" aria-label="Minute influence"></span>
+          <output id="read-minute" for="set-minute">100</output>
+        </div>
+        <div class="scale">
+          <label for="set-second">Second</label>
+          <span class="rail"><input type="range" id="set-second" min="0" max="150" step="1" value="100" aria-label="Second influence"></span>
+          <output id="read-second" for="set-second">100</output>
+        </div>
+      </div>
+      <div class="bank">
+        <h2>Geometry</h2>
+        <div class="scale">
+          <label for="set-iterations">Iter</label>
+          <span class="rail"><input type="range" id="set-iterations" min="3" max="8" step="1" value="8" aria-label="Iterations"></span>
+          <output id="read-iterations" for="set-iterations">8</output>
+        </div>
+        <div class="scale">
+          <label for="set-ratio">Ratio</label>
+          <span class="rail"><input type="range" id="set-ratio" min="0.6" max="0.72" step="0.01" value="0.66" aria-label="Branch ratio"></span>
+          <output id="read-ratio" for="set-ratio">0.66</output>
+        </div>
+        <div class="scale">
+          <label for="set-depth"><span class="in-2d">Spread</span><span class="in-3d">Depth</span></label>
+          <span class="rail"><input type="range" id="set-depth" min="40" max="150" step="1" value="100" aria-label="Depth and spread"></span>
+          <output id="read-depth" for="set-depth">100</output>
+        </div>
+      </div>
+      <p class="state"><span id="calibration-state" role="status"></span><button type="button" id="canonical" hidden>Reset</button></p>
+    </div>
     <p class="inscription">Horologium <span>·</span> fig. <span class="in-2d">I</span><span class="in-3d">II</span></p>
     <div class="console">
       <div class="selector" role="group" aria-label="Projection">
